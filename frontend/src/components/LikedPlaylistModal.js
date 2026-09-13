@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,92 +9,19 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Animated,
-  PanResponder,
-  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { createAudioPlayer } from 'expo-audio';
 import { COLORS } from '../constants/theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SWIPE_THRESHOLD = 50;
-
-// Swipeable track row supporting left swipe (Delete) and right swipe (Spotify Playlist action)
-function SwipeableTrackRow({
+function TrackRow({
   item,
   isPlaying,
   onPlayPreview,
   onDeleteTrack,
   onSpotifyPlaylistPress,
 }) {
-  const translateX = useRef(new Animated.Value(0)).current;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponder: (_, gesture) => {
-        return Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy);
-      },
-      onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        return Math.abs(gesture.dx) > 14 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2;
-      },
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        translateX.extractOffset();
-      },
-      onPanResponderMove: (_, gesture) => {
-        // Clamp swipe movement
-        if (gesture.dx > 140) {
-          translateX.setValue(140);
-        } else if (gesture.dx < -140) {
-          translateX.setValue(-140);
-        } else {
-          translateX.setValue(gesture.dx);
-        }
-      },
-      onPanResponderRelease: (_, gesture) => {
-        translateX.flattenOffset();
-        if (gesture.dx > SWIPE_THRESHOLD) {
-          // Swiped Right -> Trigger Spotify playlist action
-          Animated.spring(translateX, {
-            toValue: 0,
-            friction: 7,
-            tension: 40,
-            useNativeDriver: true,
-          }).start();
-          onSpotifyPlaylistPress(item);
-        } else if (gesture.dx < -SWIPE_THRESHOLD) {
-          // Swiped Left -> Trigger Delete confirmation dialog
-          Animated.spring(translateX, {
-            toValue: 0,
-            friction: 7,
-            tension: 40,
-            useNativeDriver: true,
-          }).start();
-          onDeleteTrack(item);
-        } else {
-          // Reset to center
-          Animated.spring(translateX, {
-            toValue: 0,
-            friction: 7,
-            tension: 40,
-            useNativeDriver: true,
-          }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        translateX.flattenOffset();
-        Animated.spring(translateX, {
-          toValue: 0,
-          useNativeDriver: true,
-        }).start();
-      },
-    })
-  ).current;
-
   const dateFormatted = item.swiped_at
     ? new Date(item.swiped_at).toLocaleDateString(undefined, {
         month: 'short',
@@ -103,66 +30,68 @@ function SwipeableTrackRow({
     : null;
 
   return (
-    <View style={styles.rowContainer}>
-      {/* Background Actions revealed on swipe */}
-      <View style={styles.backgroundActions}>
-        {/* Left background: Green Spotify Hamburger action (revealed on right swipe) */}
-        <View style={styles.actionLeft}>
-          <Ionicons name="menu" size={24} color="#000" />
-          <Text style={styles.actionLeftText}>Spotify Playlist</Text>
-        </View>
+    <View style={styles.trackRow}>
+      {/* Artwork */}
+      <Image
+        source={{
+          uri:
+            item.album_art_url ||
+            item.albumArtUrl ||
+            'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400',
+        }}
+        style={styles.artworkThumb}
+      />
 
-        {/* Right background: Red Delete action (revealed on left swipe) */}
-        <View style={styles.actionRight}>
-          <Ionicons name="trash" size={22} color="#FFF" />
-          <Text style={styles.actionRightText}>Delete</Text>
-        </View>
+      {/* Track Details */}
+      <View style={styles.trackDetails}>
+        <Text style={styles.trackTitle} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <Text style={styles.trackArtist} numberOfLines={1}>
+          {item.artist}
+        </Text>
+        {dateFormatted && <Text style={styles.trackDate}>Saved {dateFormatted}</Text>}
       </View>
 
-      {/* Foreground Swipeable Item */}
-      <Animated.View
-        style={[
-          styles.trackRow,
-          { transform: [{ translateX }] },
-        ]}
-        {...panResponder.panHandlers}
-      >
-        <Image
-          source={{
-            uri:
-              item.album_art_url ||
-              item.albumArtUrl ||
-              'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400',
-          }}
-          style={styles.artworkThumb}
-        />
+      {/* Action Buttons Row */}
+      <View style={styles.actionsGroup}>
+        {/* 1. Hamburger Icon Button (Add to Spotify playlist) */}
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() => onSpotifyPlaylistPress(item)}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="menu" size={22} color={COLORS.textPrimary} />
+        </TouchableOpacity>
 
-        <View style={styles.trackDetails}>
-          <Text style={styles.trackTitle} numberOfLines={1}>
-            {item.name}
-          </Text>
-          <Text style={styles.trackArtist} numberOfLines={1}>
-            {item.artist}
-          </Text>
-          {dateFormatted && <Text style={styles.trackDate}>Saved {dateFormatted}</Text>}
-        </View>
-
-        {/* Play/Pause 30s Audio Preview */}
+        {/* 2. Play / Pause 30s Audio Preview */}
         {(item.preview_url || item.previewUrl) && (
           <TouchableOpacity
             style={[styles.playBtn, isPlaying && styles.playingBtn]}
             onPress={() => onPlayPreview(item)}
             activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Ionicons
               name={isPlaying ? 'pause' : 'play'}
-              size={16}
+              size={15}
               color={isPlaying ? '#000' : COLORS.textPrimary}
               style={!isPlaying ? { marginLeft: 2 } : null}
             />
           </TouchableOpacity>
         )}
-      </Animated.View>
+
+        {/* 3. Delete Track Button */}
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.deleteBtn]}
+          onPress={() => onDeleteTrack(item)}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="trash-outline" size={19} color={COLORS.nopeRed} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -217,19 +146,19 @@ export default function LikedPlaylistModal({
     }
   };
 
-  // Popup when swiping right
+  // Popup when clicking the hamburger icon
   const handleSpotifyPlaylistPress = (item) => {
     Alert.alert(
-      'Spotify Playlist',
-      `This feature is not yet implemented. We're planning for this to allow you to add "${item.name}" to a specific playlist on Spotify.`,
+      'Add to Spotify Playlist',
+      `This feature is not yet implemented.\n\nWe're planning for this to allow you to add "${item.name}" to a specific playlist on Spotify.`,
       [{ text: 'OK', style: 'default' }]
     );
   };
 
-  // Confirm before deleting track from playlist (swiping left)
+  // Confirm before deleting track from playlist
   const handleDeleteConfirmation = (item) => {
     Alert.alert(
-      'Delete Track',
+      'Remove from Playlist',
       `Are you sure you want to remove "${item.name}" from your liked songs?`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -257,7 +186,7 @@ export default function LikedPlaylistModal({
     const trackId = item.spotify_track_id || item.id || item.track_id;
     const isThisPlaying = playingTrackId === trackId;
     return (
-      <SwipeableTrackRow
+      <TrackRow
         item={item}
         isPlaying={isThisPlaying}
         onPlayPreview={handlePlayPreview}
@@ -296,21 +225,6 @@ export default function LikedPlaylistModal({
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* Swipe Instructions Banner */}
-        {tracks.length > 0 && (
-          <View style={styles.swipeGuide}>
-            <View style={styles.guideItem}>
-              <Ionicons name="arrow-forward-circle" size={16} color={COLORS.primary} />
-              <Text style={styles.guideText}>Swipe right for Spotify</Text>
-            </View>
-            <Text style={styles.guideDot}>•</Text>
-            <View style={styles.guideItem}>
-              <Ionicons name="arrow-back-circle" size={16} color={COLORS.nopeRed} />
-              <Text style={styles.guideText}>Swipe left to delete</Text>
-            </View>
-          </View>
-        )}
 
         {/* Content */}
         {isLoading ? (
@@ -407,83 +321,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  swipeGuide: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.cardBackground,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    gap: 10,
-  },
-  guideItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  guideText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  guideDot: {
-    color: COLORS.textMuted,
-    fontSize: 12,
-  },
   listContent: {
-    paddingVertical: 8,
-  },
-  rowContainer: {
-    position: 'relative',
-    marginVertical: 4,
-    marginHorizontal: 14,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  backgroundActions: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderRadius: 12,
-  },
-  actionLeft: {
-    flex: 1,
-    height: '100%',
-    backgroundColor: COLORS.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: 18,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     gap: 8,
-  },
-  actionLeftText: {
-    color: '#000',
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  actionRight: {
-    flex: 1,
-    height: '100%',
-    backgroundColor: COLORS.nopeRed,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingRight: 18,
-    gap: 8,
-  },
-  actionRightText: {
-    color: '#FFF',
-    fontWeight: '800',
-    fontSize: 14,
   },
   trackRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.cardBackground,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   artworkThumb: {
     width: 52,
@@ -493,8 +343,8 @@ const styles = StyleSheet.create({
   },
   trackDetails: {
     flex: 1,
-    marginLeft: 14,
-    marginRight: 10,
+    marginLeft: 12,
+    marginRight: 8,
   },
   trackTitle: {
     color: COLORS.textPrimary,
@@ -512,6 +362,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
   },
+  actionsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  deleteBtn: {
+    backgroundColor: 'rgba(233, 20, 41, 0.1)',
+    borderColor: 'rgba(233, 20, 41, 0.3)',
+  },
   playBtn: {
     width: 38,
     height: 38,
@@ -524,6 +393,7 @@ const styles = StyleSheet.create({
   },
   playingBtn: {
     backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   centerContainer: {
     flex: 1,

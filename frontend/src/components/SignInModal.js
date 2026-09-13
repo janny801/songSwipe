@@ -145,21 +145,28 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
       if (result.type === 'success' && result.url) {
         // Parse redirect parameters
         const parsed = Linking.parse(result.url);
+        // Robust parameter parsing for both Linking and standard URL
         let token = parsed.queryParams?.token;
         let emailParam = parsed.queryParams?.email;
         let displayNameParam = parsed.queryParams?.displayName;
         let userId = parsed.queryParams?.userId;
-        let isNewUser = parsed.queryParams?.isNewUser === 'true';
+        let isNewUser =
+          parsed.queryParams?.isNewUser === 'true' ||
+          parsed.queryParams?.isNewUser === true;
 
-        // Fallback parameter parsing if queryParams is not populated
-        if (!token && result.url.includes('token=')) {
-          const urlStr = result.url.replace(/^[^?]+\?/, 'http://localhost/?');
-          const searchParams = new URL(urlStr).searchParams;
-          token = searchParams.get('token');
-          emailParam = searchParams.get('email');
-          displayNameParam = searchParams.get('displayName');
-          userId = searchParams.get('userId');
-          isNewUser = searchParams.get('isNewUser') === 'true';
+        // Fallback parameter parsing if queryParams is incomplete
+        if (result.url.includes('?')) {
+          try {
+            const urlStr = result.url.replace(/^[^?]+\?/, 'http://localhost/?');
+            const searchParams = new URL(urlStr).searchParams;
+            if (!token) token = searchParams.get('token');
+            if (!emailParam) emailParam = searchParams.get('email');
+            if (!displayNameParam) displayNameParam = searchParams.get('displayName');
+            if (!userId) userId = searchParams.get('userId');
+            if (searchParams.has('isNewUser')) {
+              isNewUser = searchParams.get('isNewUser') === 'true';
+            }
+          } catch (e) {}
         }
 
         if (token) {
@@ -173,13 +180,21 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
           // Update active authentication session
           setSession(token, userObj);
 
-          // Transition directly to the "Choose Your Unique Username" screen right here!
-          setGoogleUser(userObj);
-          const initialHandle = (displayNameParam || emailParam?.split('@')[0] || 'user')
-            .replace(/[^a-zA-Z0-9_]/g, '')
-            .toLowerCase();
-          setChosenHandle(initialHandle);
-          setMode('choose_username');
+          if (isNewUser) {
+            // New Google signup -> Prompt to choose a unique handle
+            setGoogleUser(userObj);
+            const initialHandle = (displayNameParam || emailParam?.split('@')[0] || 'user')
+              .replace(/[^a-zA-Z0-9_]/g, '')
+              .toLowerCase();
+            setChosenHandle(initialHandle);
+            setMode('choose_username');
+          } else {
+            // Existing account -> Sign in immediately without asking for a username
+            onClose();
+            if (onGoogleSuccess) {
+              onGoogleSuccess(userObj, false);
+            }
+          }
         } else {
           setErrorMessage('Google authentication did not return a valid session.');
         }
