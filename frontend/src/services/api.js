@@ -211,4 +211,27 @@ export const api = {
     const data = await response.json();
     return data.tracks || [];
   },
+
+  /**
+   * Delete a track from user's playlist
+   */
+  async deleteFromPlaylist(trackId, userId, playlistName = 'Liked Songs') {
+    const params = new URLSearchParams();
+    if (userId) params.append('userId', userId);
+    if (playlistName) params.append('playlistName', playlistName);
+
+    const response = await fetch(
+      `${activeBaseUrl}/api/playlists/${encodeURIComponent(trackId)}?${params.toString()}`,
+      {
+        method: 'DELETE',
+        headers: getHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to remove track: ${response.statusText}`);
+    }
+
+    return await response.json();
+  },
 };

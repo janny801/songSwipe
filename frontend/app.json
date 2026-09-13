@@ -2,6 +2,7 @@
   "expo": {
     "name": "SongSwipe",
     "slug": "songswipe",
+    "scheme": "songswipe",
     "owner": "janred",
     "version": "1.0.0",
     "orientation": "portrait",

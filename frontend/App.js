@@ -2,14 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
-  SafeAreaView,
   StatusBar,
   ActivityIndicator,
   Text,
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from './src/constants/theme';
 import { api, getBackendUrl } from './src/services/api';
@@ -23,7 +22,7 @@ import SettingsModal from './src/components/SettingsModal';
 import SignInModal from './src/components/SignInModal';
 
 function MainApp() {
-  const { user, logout } = useAuth();
+  const { user, logout, isAuthenticated } = useAuth();
 
   const [tracks, setTracks] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -78,8 +77,12 @@ function MainApp() {
     }
   }, [stopAudio]);
 
-  // Load liked tracks (passes user.id if logged in)
+  // Load liked tracks (only for authenticated users)
   const loadLikedPlaylist = useCallback(async () => {
+    if (!isAuthenticated) {
+      setLikedPlaylist([]);
+      return;
+    }
     setIsLoadingPlaylist(true);
     try {
       const playlist = await api.getLikedPlaylist(user?.id);
@@ -89,41 +92,58 @@ function MainApp() {
     } finally {
       setIsLoadingPlaylist(false);
     }
-  }, [user?.id]);
+  }, [isAuthenticated, user?.id]);
 
   useEffect(() => {
     checkBackend();
     loadTracks();
   }, [checkBackend, loadTracks]);
 
-  // Reload playlist when user signs in or out
+  // Reload playlist when authentication status changes
   useEffect(() => {
-    loadLikedPlaylist();
-  }, [user?.id, loadLikedPlaylist]);
+    if (isAuthenticated) {
+      loadLikedPlaylist();
+    } else {
+      setLikedPlaylist([]);
+    }
+  }, [isAuthenticated, loadLikedPlaylist]);
 
   // Handle Right Swipe (LIKE track)
   const handleSwipeRight = async (track) => {
     if (!track) return;
     setCurrentIndex((prev) => prev + 1);
 
-    // Optimistically update liked list
-    setLikedPlaylist((prev) => [
-      {
-        ...track,
-        swiped_at: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
+    if (isAuthenticated) {
+      // Optimistically update liked list
+      setLikedPlaylist((prev) => [
+        {
+          ...track,
+          swiped_at: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
 
-    try {
-      await api.swipeTrack({
-        track,
-        direction: 'right',
-        userId: user?.id,
-        playlistName: 'Liked Songs',
-      });
-    } catch (error) {
-      console.warn('Failed to save liked track to backend:', error.message);
+      try {
+        await api.swipeTrack({
+          track,
+          direction: 'right',
+          userId: user?.id,
+          playlistName: 'Liked Songs',
+        });
+      } catch (error) {
+        console.warn('Failed to save liked track to backend:', error.message);
+      }
+    } else {
+      // Guest interaction without saving to a persistent playlist
+      try {
+        await api.swipeTrack({
+          track,
+          direction: 'right',
+          userId: user?.id,
+        });
+      } catch (error) {
+        // silent
+      }
     }
   };
 
@@ -156,9 +176,43 @@ function MainApp() {
     }
   };
 
+  // Open Playlist Drawer - only allowed when user is logged in
   const handleOpenPlaylist = () => {
+    if (!isAuthenticated) {
+      Alert.alert(
+        'Sign In Required',
+        'Please sign in to view and manage your saved songs playlist.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Sign In',
+            style: 'default',
+            onPress: () => setIsAuthModalVisible(true),
+          },
+        ]
+      );
+      return;
+    }
     loadLikedPlaylist();
     setIsPlaylistVisible(true);
+  };
+
+  // Delete a track from liked playlist (swipe-to-delete or trash icon)
+  const handleDeleteTrack = async (track) => {
+    const trackId = track.spotify_track_id || track.id || track.track_id;
+    if (!trackId) return;
+
+    // Optimistically remove from state
+    setLikedPlaylist((prev) =>
+      prev.filter((t) => (t.spotify_track_id || t.id || t.track_id) !== trackId)
+    );
+
+    try {
+      await api.deleteFromPlaylist(trackId, user?.id);
+    } catch (error) {
+      console.warn('Failed to delete track from playlist:', error.message);
+      loadLikedPlaylist();
+    }
   };
 
   return (
@@ -214,7 +268,7 @@ function MainApp() {
         isPlaying={isPlaying}
         onTogglePlayPause={togglePlayPause}
         onOpenPlaylist={handleOpenPlaylist}
-        likedCount={likedPlaylist.length}
+        likedCount={isAuthenticated ? likedPlaylist.length : 0}
         disabled={isLoadingTracks || currentIndex >= tracks.length}
       />
 
@@ -225,6 +279,7 @@ function MainApp() {
         tracks={likedPlaylist}
         isLoading={isLoadingPlaylist}
         onRefresh={loadLikedPlaylist}
+        onDeleteTrack={handleDeleteTrack}
       />
 
       {/* Sign In & Google Authentication Modal */}

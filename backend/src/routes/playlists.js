@@ -239,4 +239,48 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
+/**
+ * DELETE /api/playlists/:trackId
+ * Remove a track from user's playlist
+ */
+router.delete('/:trackId', optionalAuth, async (req, res) => {
+  const userId = req.user?.userId || req.query.userId || DEFAULT_GUEST_ID;
+  const { trackId } = req.params;
+  const playlistName = req.query.playlistName || 'Liked Songs';
+
+  if (!getIsConnected()) {
+    inMemoryStore.playlists = inMemoryStore.playlists.filter(
+      (item) => !(item.userId === userId && (item.spotify_track_id === trackId || item.id === trackId))
+    );
+    return res.status(200).json({
+      success: true,
+      message: 'Track removed from playlist (in-memory mode)',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `DELETE FROM playlists
+       WHERE user_id = $1 AND playlist_name = $2 AND track_id IN (
+         SELECT id FROM tracks WHERE id::text = $3 OR spotify_track_id = $3
+       )
+       RETURNING id`,
+      [userId, playlistName, trackId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Track removed from playlist successfully',
+      deletedCount: result.rowCount,
+    });
+  } catch (error) {
+    console.error('Error removing track from playlist:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to delete track from playlist',
+      details: error.message,
+    });
+  }
+});
+
 module.exports = router;

@@ -12,7 +12,7 @@ const { fetchSpotifyTracks } = require('../services/spotifyService');
  */
 router.get('/', async (req, res) => {
   try {
-    const { query = 'top hits', limit = 20, genre = '' } = req.query;
+    const { query = '', limit = 10, genre = '' } = req.query;
     const result = await fetchSpotifyTracks({ query, limit, genre });
     return res.status(200).json({
       success: true,
