@@ -24,6 +24,7 @@ function getDefaultBackendUrl() {
 }
 
 let activeBaseUrl = getDefaultBackendUrl();
+let activeAuthToken = null;
 
 export function setBackendUrl(url) {
   if (url && url.trim().length > 0) {
@@ -35,6 +36,25 @@ export function getBackendUrl() {
   return activeBaseUrl;
 }
 
+export function setAuthToken(token) {
+  activeAuthToken = token;
+}
+
+export function getAuthToken() {
+  return activeAuthToken;
+}
+
+function getHeaders(extraHeaders = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...extraHeaders,
+  };
+  if (activeAuthToken) {
+    headers['Authorization'] = `Bearer ${activeAuthToken}`;
+  }
+  return headers;
+}
+
 export const api = {
   /**
    * Healthcheck to verify connectivity with the Express backend
@@ -43,7 +63,7 @@ export const api = {
     try {
       const response = await fetch(`${activeBaseUrl}/api/health`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
       });
       return await response.json();
     } catch (error) {
@@ -52,14 +72,93 @@ export const api = {
     }
   },
 
+  // ==================== AUTHENTICATION ====================
+
+  /**
+   * Register with Email & Password
+   */
+  async register({ email, password, displayName }) {
+    const response = await fetch(`${activeBaseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ email, password, displayName }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Registration failed');
+    }
+    if (data.token) {
+      setAuthToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Sign in with Email & Password
+   */
+  async login({ email, password }) {
+    const response = await fetch(`${activeBaseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Login failed');
+    }
+    if (data.token) {
+      setAuthToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Sign in / Sign up with Google OAuth
+   */
+  async googleAuth({ idToken, userProfile }) {
+    const response = await fetch(`${activeBaseUrl}/api/auth/google`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ idToken, userProfile }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Google authentication failed');
+    }
+    if (data.token) {
+      setAuthToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Get current authenticated user profile
+   */
+  async getMe() {
+    if (!activeAuthToken) return null;
+    const response = await fetch(`${activeBaseUrl}/api/auth/me`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.user;
+  },
+
+  // ==================== TRACKS & PLAYLISTS ====================
+
   /**
    * Fetches tracks from the backend (which proxies Spotify Web API with client credentials)
    */
-  async fetchTracks(query = 'top hits 2024', limit = 20) {
+  async fetchTracks(query = 'top hits 2024', limit = 10) {
     const url = `${activeBaseUrl}/api/tracks?query=${encodeURIComponent(query)}&limit=${limit}`;
     const response = await fetch(url, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
     });
 
     if (!response.ok) {
@@ -76,7 +175,7 @@ export const api = {
   async swipeTrack({ track, direction = 'right', userId, playlistName = 'Liked Songs' }) {
     const response = await fetch(`${activeBaseUrl}/api/playlists/swipe`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify({
         track,
         direction,
@@ -102,7 +201,7 @@ export const api = {
 
     const response = await fetch(`${activeBaseUrl}/api/playlists?${params.toString()}`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
     });
 
     if (!response.ok) {

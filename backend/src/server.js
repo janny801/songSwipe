@@ -7,6 +7,7 @@ const { testConnection, getIsConnected } = require('./config/db');
 const tracksRouter = require('./routes/tracks');
 const playlistsRouter = require('./routes/playlists');
 const usersRouter = require('./routes/users');
+const authRouter = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -17,6 +18,7 @@ app.use(express.json());
 app.use(morgan('dev'));
 
 // Routes
+app.use('/api/auth', authRouter);
 app.use('/api/tracks', tracksRouter);
 app.use('/api/playlists', playlistsRouter);
 app.use('/api/users', usersRouter);

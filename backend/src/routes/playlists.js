@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool, getIsConnected } = require('../config/db');
+const { optionalAuth } = require('../middleware/auth');
 
 // In-memory fallback store when PostgreSQL is not yet running
 const inMemoryStore = {
@@ -38,13 +39,14 @@ async function ensureDefaultUser(client) {
  * Handles right-swipe (like) and left-swipe (pass) actions
  * When direction is 'right' (or action is 'like'), saves track to DB and links to user's playlist
  */
-router.post('/swipe', async (req, res) => {
+router.post('/swipe', optionalAuth, async (req, res) => {
+  const targetUserId = req.user?.userId || req.body.userId || DEFAULT_GUEST_ID;
   const {
-    userId = DEFAULT_GUEST_ID,
     direction = 'right',
     playlistName = 'Liked Songs',
     track,
   } = req.body;
+  const userId = targetUserId;
 
   if (!track || (!track.spotify_track_id && !track.id)) {
     return res.status(400).json({
@@ -182,8 +184,8 @@ router.post('/swipe', async (req, res) => {
  * GET /api/playlists
  * Retrieve saved tracks for a user (defaults to default guest user)
  */
-router.get('/', async (req, res) => {
-  const userId = req.query.userId || DEFAULT_GUEST_ID;
+router.get('/', optionalAuth, async (req, res) => {
+  const userId = req.user?.userId || req.query.userId || DEFAULT_GUEST_ID;
   const playlistName = req.query.playlistName || 'Liked Songs';
 
   if (!getIsConnected()) {

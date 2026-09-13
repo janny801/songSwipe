@@ -1,17 +1,42 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 
-export default function AppHeader({ onOpenSettings, isConnected = true, onRefresh }) {
+export default function AppHeader({
+  onOpenSettings,
+  isConnected = true,
+  onRefresh,
+  user,
+  onOpenSignIn,
+  onSignOut,
+}) {
+  const isUserLoggedIn = Boolean(user && user.auth_provider !== 'guest');
+
+  const handleProfilePress = () => {
+    if (isUserLoggedIn) {
+      Alert.alert(
+        'Account',
+        `Signed in as ${user.display_name || user.email} (${user.auth_provider === 'google' ? 'Google' : 'Email'})`,
+        [
+          { text: 'Sign Out', style: 'destructive', onPress: onSignOut },
+          { text: 'Close', style: 'cancel' },
+        ]
+      );
+    } else {
+      onOpenSignIn && onOpenSignIn();
+    }
+  };
+
   return (
     <View style={styles.headerContainer}>
+      {/* Settings Button */}
       <TouchableOpacity
-        style={styles.settingsBtn}
+        style={styles.iconBtn}
         onPress={onOpenSettings}
         activeOpacity={0.7}
       >
-        <Ionicons name="options-outline" size={24} color={COLORS.textPrimary} />
+        <Ionicons name="options-outline" size={22} color={COLORS.textPrimary} />
         {!isConnected && <View style={styles.offlineDot} />}
       </TouchableOpacity>
 
@@ -23,14 +48,40 @@ export default function AppHeader({ onOpenSettings, isConnected = true, onRefres
         </Text>
       </View>
 
-      {/* Refresh tracks button */}
-      <TouchableOpacity
-        style={styles.refreshBtn}
-        onPress={onRefresh}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="sync-outline" size={22} color={COLORS.textPrimary} />
-      </TouchableOpacity>
+      {/* Right Controls: User Profile / Sign In & Refresh */}
+      <View style={styles.rightActions}>
+        <TouchableOpacity
+          style={[styles.authPill, isUserLoggedIn && styles.authPillLoggedIn]}
+          onPress={handleProfilePress}
+          activeOpacity={0.8}
+        >
+          {isUserLoggedIn ? (
+            <>
+              {user.auth_provider === 'google' ? (
+                <Ionicons name="logo-google" size={14} color="#EA4335" />
+              ) : (
+                <Ionicons name="person-circle" size={16} color={COLORS.primary} />
+              )}
+              <Text style={styles.authPillText} numberOfLines={1}>
+                {user.display_name?.split(' ')[0] || 'Me'}
+              </Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="log-in-outline" size={15} color="#000" />
+              <Text style={styles.authPillTextGuest}>Sign In</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={onRefresh}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="sync-outline" size={20} color={COLORS.textPrimary} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -40,13 +91,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  settingsBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: COLORS.surface,
     alignItems: 'center',
     justifyContent: 'center',
@@ -77,12 +128,34 @@ const styles = StyleSheet.create({
   brandAccent: {
     color: COLORS.primary,
   },
-  refreshBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.surface,
+  rightActions: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+  },
+  authPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  authPillLoggedIn: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  authPillTextGuest: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  authPillText: {
+    color: COLORS.textPrimary,
+    fontSize: 12,
+    fontWeight: '600',
+    maxWidth: 60,
   },
 });

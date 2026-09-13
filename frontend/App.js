@@ -14,13 +14,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from './src/constants/theme';
 import { api, getBackendUrl } from './src/services/api';
 import { useAudioPlayer } from './src/hooks/useAudioPlayer';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import AppHeader from './src/components/AppHeader';
 import CardDeck from './src/components/CardDeck';
 import BottomControls from './src/components/BottomControls';
 import LikedPlaylistModal from './src/components/LikedPlaylistModal';
 import SettingsModal from './src/components/SettingsModal';
+import SignInModal from './src/components/SignInModal';
 
-export default function App() {
+function MainApp() {
+  const { user, logout } = useAuth();
+
   const [tracks, setTracks] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [likedPlaylist, setLikedPlaylist] = useState([]);
@@ -29,6 +33,7 @@ export default function App() {
   const [healthInfo, setHealthInfo] = useState(null);
   const [isPlaylistVisible, setIsPlaylistVisible] = useState(false);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+  const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
 
   const deckRef = useRef(null);
 
@@ -65,7 +70,7 @@ export default function App() {
       console.warn('Error loading tracks:', error.message);
       Alert.alert(
         'Backend Connection Error',
-        `Could not reach Express server at ${getBackendUrl()}. Make sure the backend is running (npm run dev) and your IP is reachable.`,
+        `Could not reach Express server at ${getBackendUrl()}. Make sure the backend is running and your IP is reachable.`,
         [{ text: 'Settings', onPress: () => setIsSettingsVisible(true) }, { text: 'Retry', onPress: loadTracks }]
       );
     } finally {
@@ -73,24 +78,28 @@ export default function App() {
     }
   }, [stopAudio]);
 
-  // Load liked tracks
+  // Load liked tracks (passes user.id if logged in)
   const loadLikedPlaylist = useCallback(async () => {
     setIsLoadingPlaylist(true);
     try {
-      const playlist = await api.getLikedPlaylist();
+      const playlist = await api.getLikedPlaylist(user?.id);
       setLikedPlaylist(playlist);
     } catch (error) {
       console.warn('Error loading playlist:', error.message);
     } finally {
       setIsLoadingPlaylist(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     checkBackend();
     loadTracks();
+  }, [checkBackend, loadTracks]);
+
+  // Reload playlist when user signs in or out
+  useEffect(() => {
     loadLikedPlaylist();
-  }, [checkBackend, loadTracks, loadLikedPlaylist]);
+  }, [user?.id, loadLikedPlaylist]);
 
   // Handle Right Swipe (LIKE track)
   const handleSwipeRight = async (track) => {
@@ -110,6 +119,7 @@ export default function App() {
       await api.swipeTrack({
         track,
         direction: 'right',
+        userId: user?.id,
         playlistName: 'Liked Songs',
       });
     } catch (error) {
@@ -126,6 +136,7 @@ export default function App() {
       await api.swipeTrack({
         track,
         direction: 'left',
+        userId: user?.id,
       });
     } catch (error) {
       console.warn('Failed to post pass action:', error.message);
@@ -151,81 +162,98 @@ export default function App() {
   };
 
   return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+
+      {/* Top Header with User Sign In / Profile */}
+      <AppHeader
+        isConnected={healthInfo?.status === 'ok'}
+        onOpenSettings={() => setIsSettingsVisible(true)}
+        onRefresh={loadTracks}
+        user={user}
+        onOpenSignIn={() => setIsAuthModalVisible(true)}
+        onSignOut={logout}
+      />
+
+      {/* Main Swipeable Card Deck */}
+      <View style={styles.contentArea}>
+        {isLoadingTracks ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading Spotify Tracks...</Text>
+          </View>
+        ) : tracks.length === 0 ? (
+          <View style={styles.loadingContainer}>
+            <Ionicons name="cloud-offline-outline" size={54} color={COLORS.textMuted} />
+            <Text style={styles.errorTitle}>No Tracks Found</Text>
+            <Text style={styles.errorSubtitle}>
+              Could not connect to backend server at {getBackendUrl()}
+            </Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={loadTracks}>
+              <Text style={styles.retryBtnText}>Retry Connection</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <CardDeck
+            ref={deckRef}
+            tracks={tracks}
+            currentIndex={currentIndex}
+            onSwipeLeft={handleSwipeLeft}
+            onSwipeRight={handleSwipeRight}
+            onReset={() => setCurrentIndex(0)}
+            isPlaying={isPlaying}
+            progress={progress}
+          />
+        )}
+      </View>
+
+      {/* Bottom Interactive Controls */}
+      <BottomControls
+        onPass={triggerPass}
+        onLike={triggerLike}
+        isPlaying={isPlaying}
+        onTogglePlayPause={togglePlayPause}
+        onOpenPlaylist={handleOpenPlaylist}
+        likedCount={likedPlaylist.length}
+        disabled={isLoadingTracks || currentIndex >= tracks.length}
+      />
+
+      {/* Liked Songs Modal */}
+      <LikedPlaylistModal
+        visible={isPlaylistVisible}
+        onClose={() => setIsPlaylistVisible(false)}
+        tracks={likedPlaylist}
+        isLoading={isLoadingPlaylist}
+        onRefresh={loadLikedPlaylist}
+      />
+
+      {/* Sign In & Google Authentication Modal */}
+      <SignInModal
+        visible={isAuthModalVisible}
+        onClose={() => setIsAuthModalVisible(false)}
+      />
+
+      {/* Backend & Diagnostics Settings Modal */}
+      <SettingsModal
+        visible={isSettingsVisible}
+        onClose={() => setIsSettingsVisible(false)}
+        healthInfo={healthInfo}
+        onServerUrlChange={() => {
+          checkBackend();
+          loadTracks();
+          loadLikedPlaylist();
+        }}
+      />
+    </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
-
-        {/* Top Header */}
-        <AppHeader
-          isConnected={healthInfo?.status === 'ok'}
-          onOpenSettings={() => setIsSettingsVisible(true)}
-          onRefresh={loadTracks}
-        />
-
-        {/* Main Swipeable Card Deck */}
-        <View style={styles.contentArea}>
-          {isLoadingTracks ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
-              <Text style={styles.loadingText}>Loading Spotify Tracks...</Text>
-            </View>
-          ) : tracks.length === 0 ? (
-            <View style={styles.loadingContainer}>
-              <Ionicons name="cloud-offline-outline" size={54} color={COLORS.textMuted} />
-              <Text style={styles.errorTitle}>No Tracks Found</Text>
-              <Text style={styles.errorSubtitle}>
-                Could not connect to backend server at {getBackendUrl()}
-              </Text>
-              <TouchableOpacity style={styles.retryBtn} onPress={loadTracks}>
-                <Text style={styles.retryBtnText}>Retry Connection</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <CardDeck
-              ref={deckRef}
-              tracks={tracks}
-              currentIndex={currentIndex}
-              onSwipeLeft={handleSwipeLeft}
-              onSwipeRight={handleSwipeRight}
-              onReset={() => setCurrentIndex(0)}
-              isPlaying={isPlaying}
-              progress={progress}
-            />
-          )}
-        </View>
-
-        {/* Bottom Interactive Controls */}
-        <BottomControls
-          onPass={triggerPass}
-          onLike={triggerLike}
-          isPlaying={isPlaying}
-          onTogglePlayPause={togglePlayPause}
-          onOpenPlaylist={handleOpenPlaylist}
-          likedCount={likedPlaylist.length}
-          disabled={isLoadingTracks || currentIndex >= tracks.length}
-        />
-
-        {/* Liked Songs Modal */}
-        <LikedPlaylistModal
-          visible={isPlaylistVisible}
-          onClose={() => setIsPlaylistVisible(false)}
-          tracks={likedPlaylist}
-          isLoading={isLoadingPlaylist}
-          onRefresh={loadLikedPlaylist}
-        />
-
-        {/* Backend & Spotify Settings Modal */}
-        <SettingsModal
-          visible={isSettingsVisible}
-          onClose={() => setIsSettingsVisible(false)}
-          healthInfo={healthInfo}
-          onServerUrlChange={() => {
-            checkBackend();
-            loadTracks();
-            loadLikedPlaylist();
-          }}
-        />
-      </SafeAreaView>
+      <AuthProvider>
+        <MainApp />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

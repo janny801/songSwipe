@@ -1,23 +1,31 @@
 -- PostgreSQL Database Schema for SongSwipe
--- Structured to support current swipe-to-like behavior and future Spotify OAuth account linking
+-- Structured to support Google Auth, standard Email/Password, Spotify OAuth, and swipe-to-like behavior
 
 -- Enable UUID extension if supported/needed
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- Users table
--- Accommodates anonymous/guest session IDs now, and future Spotify OAuth credentials & profiles
+-- Accommodates Google Sign-In, Email/Password, anonymous guests, and Spotify OAuth linking
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    google_id VARCHAR(255) UNIQUE,
     spotify_id VARCHAR(255) UNIQUE,
     display_name VARCHAR(255),
     email VARCHAR(255) UNIQUE,
+    password_hash VARCHAR(255),
     profile_image_url TEXT,
+    auth_provider VARCHAR(50) DEFAULT 'email',
     spotify_access_token TEXT,
     spotify_refresh_token TEXT,
     spotify_token_expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Ensure columns exist if table was already created earlier
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(50) DEFAULT 'email';
 
 -- Tracks table
 -- Caches Spotify track metadata, preview URLs, and album artwork
@@ -51,3 +59,5 @@ CREATE INDEX IF NOT EXISTS idx_playlists_user_id ON playlists(user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_track_id ON playlists(track_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_spotify_id ON tracks(spotify_track_id);
 CREATE INDEX IF NOT EXISTS idx_users_spotify_id ON users(spotify_id);
+CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
