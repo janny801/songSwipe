@@ -228,6 +228,7 @@ export const api = {
     const params = new URLSearchParams();
     if (userId) params.append('userId', userId);
     if (playlistName) params.append('playlistName', playlistName);
+    params.append('_t', Date.now().toString());
 
     const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists?${params.toString()}`, {
       method: 'GET',

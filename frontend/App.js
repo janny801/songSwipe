@@ -21,6 +21,7 @@ import LikedPlaylistModal from './src/components/LikedPlaylistModal';
 import SettingsModal from './src/components/SettingsModal';
 import SignInModal from './src/components/SignInModal';
 import ChooseUsernameModal from './src/components/ChooseUsernameModal';
+import ProfileModal from './src/components/ProfileModal';
 
 function MainApp() {
   const { user, logout, isAuthenticated } = useAuth();
@@ -35,6 +36,7 @@ function MainApp() {
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
   const [isChooseUsernameVisible, setIsChooseUsernameVisible] = useState(false);
+  const [isProfileVisible, setIsProfileVisible] = useState(false);
 
   const deckRef = useRef(null);
 
@@ -228,8 +230,7 @@ function MainApp() {
         onRefresh={loadTracks}
         user={user}
         onOpenSignIn={() => setIsAuthModalVisible(true)}
-        onSignOut={logout}
-        onEditUsername={() => setIsChooseUsernameVisible(true)}
+        onOpenProfile={() => setIsProfileVisible(true)}
       />
 
       {/* Main Swipeable Card Deck */}
@@ -290,15 +291,15 @@ function MainApp() {
         visible={isAuthModalVisible}
         onClose={() => setIsAuthModalVisible(false)}
         onGoogleSuccess={(userObj, isNewUser) => {
-          // Immediately prompt user to choose/confirm unique username after Google sign in
-          setIsChooseUsernameVisible(true);
+          // After Google sign in completes, reload playlist
+          loadLikedPlaylist();
         }}
       />
 
-      {/* Choose Unique Username Modal (Separate Page After Google Login / Profile Edit) */}
-      <ChooseUsernameModal
-        visible={isChooseUsernameVisible}
-        onClose={() => setIsChooseUsernameVisible(false)}
+      {/* User Account & Profile Modal (modify unique username & sign out) */}
+      <ProfileModal
+        visible={isProfileVisible}
+        onClose={() => setIsProfileVisible(false)}
       />
 
       {/* Backend & Diagnostics Settings Modal */}

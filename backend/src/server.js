@@ -12,11 +12,22 @@ const authRouter = require('./routes/auth');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Disable ETags to avoid 304 empty responses in React Native fetch
+app.set('etag', false);
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
+
+// Ensure fresh data on every API request
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 // Routes
 app.use('/api/auth', authRouter);

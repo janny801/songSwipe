@@ -9,22 +9,13 @@ export default function AppHeader({
   onRefresh,
   user,
   onOpenSignIn,
-  onSignOut,
-  onEditUsername,
+  onOpenProfile,
 }) {
   const isUserLoggedIn = Boolean(user && user.auth_provider !== 'guest');
 
   const handleProfilePress = () => {
     if (isUserLoggedIn) {
-      Alert.alert(
-        'Account',
-        `Signed in as @${user.display_name || user.email} (${user.auth_provider === 'google' ? 'Google' : 'Email'})`,
-        [
-          { text: 'Change Username', onPress: () => onEditUsername && onEditUsername() },
-          { text: 'Sign Out', style: 'destructive', onPress: onSignOut },
-          { text: 'Close', style: 'cancel' },
-        ]
-      );
+      onOpenProfile && onOpenProfile();
     } else {
       onOpenSignIn && onOpenSignIn();
     }
