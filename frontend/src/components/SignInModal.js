@@ -6,34 +6,42 @@ import {
   Modal,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
-import * as AuthSession from 'expo-auth-session';
-import { COLORS, SHADOWS } from '../constants/theme';
+import * as Linking from 'expo-linking';
+import { COLORS } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
+import { getBackendUrl } from '../services/api';
 
 WebBrowser.maybeCompleteAuthSession();
 
-export default function SignInModal({ visible, onClose }) {
-  const { login, register, loginWithGoogle, continueAsGuest, isLoading } = useAuth();
+export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
+  const { login, register, setSession, continueAsGuest } = useAuth();
 
-  const [isSignUp, setIsSignUp] = useState(false);
+  // Mode: 'signin' | 'signup'
+  const [mode, setMode] = useState('signin');
+
+  // Form states
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Independent Loading & Error states
+  const [isEmailLoading, setIsEmailLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Clear state on tab switch
-  const toggleMode = (signUp) => {
-    setIsSignUp(signUp);
+  const isSignUp = mode === 'signup';
+
+  const switchMode = (newMode) => {
+    setMode(newMode);
     setErrorMessage('');
   };
 
@@ -43,88 +51,141 @@ export default function SignInModal({ visible, onClose }) {
   const hasNumber = /[0-9]/.test(password);
   const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password);
 
-  // Submit Email/Password
+  // Handle Standard Email & Password Submit
   const handleSubmit = async () => {
     setErrorMessage('');
 
     if (!email.trim() || !password.trim()) {
-      setErrorMessage('Please fill in both email and password.');
+      setErrorMessage('Please enter both email/username and password.');
       return;
     }
 
-    if (isSignUp) {
-      if (!hasMinLength) {
-        setErrorMessage('Password must be more than 8 characters long.');
-        return;
-      }
-      if (!hasUppercase) {
-        setErrorMessage('Password must contain at least one uppercase letter (A-Z).');
-        return;
-      }
-      if (!hasNumber) {
-        setErrorMessage('Password must contain at least one number (0-9).');
-        return;
-      }
-      if (!hasSpecial) {
-        setErrorMessage('Password must contain at least one special character (!, @, #, $, etc.).');
-        return;
-      }
-      const res = await register(email.trim(), password, displayName.trim());
-      if (res.success) {
-        onClose();
+    setIsEmailLoading(true);
+
+    try {
+      if (isSignUp) {
+        const cleanUsername = displayName.trim();
+        if (!cleanUsername) {
+          setErrorMessage('Please choose a unique username.');
+          setIsEmailLoading(false);
+          return;
+        }
+        if (cleanUsername.length < 3 || cleanUsername.length > 30) {
+          setErrorMessage('Username must be between 3 and 30 characters.');
+          setIsEmailLoading(false);
+          return;
+        }
+        if (!/^[a-zA-Z0-9_]+$/.test(cleanUsername)) {
+          setErrorMessage('Username can only contain letters, numbers, and underscores.');
+          setIsEmailLoading(false);
+          return;
+        }
+        if (!hasMinLength) {
+          setErrorMessage('Password must be more than 8 characters long.');
+          setIsEmailLoading(false);
+          return;
+        }
+        if (!hasUppercase) {
+          setErrorMessage('Password must contain at least one uppercase letter (A-Z).');
+          setIsEmailLoading(false);
+          return;
+        }
+        if (!hasNumber) {
+          setErrorMessage('Password must contain at least one number (0-9).');
+          setIsEmailLoading(false);
+          return;
+        }
+        if (!hasSpecial) {
+          setErrorMessage('Password must contain at least one special character (!, @, #, $, etc.).');
+          setIsEmailLoading(false);
+          return;
+        }
+
+        const res = await register(email.trim(), password, cleanUsername);
+        if (res.success) {
+          onClose();
+        } else {
+          setErrorMessage(res.error || 'Registration failed.');
+        }
       } else {
-        setErrorMessage(res.error || 'Registration failed.');
+        const res = await login(email.trim(), password);
+        if (res.success) {
+          onClose();
+        } else {
+          setErrorMessage(res.error || 'Invalid email/username or password.');
+        }
       }
-    } else {
-      const res = await login(email.trim(), password);
-      if (res.success) {
-        onClose();
-      } else {
-        setErrorMessage(res.error || 'Invalid email or password.');
-      }
+    } catch (err) {
+      setErrorMessage(err.message || 'An error occurred. Please try again.');
+    } finally {
+      setIsEmailLoading(false);
     }
   };
 
-  // Google Sign-In Handler
+  // Handle Google Sign-In via native WebBrowser OAuth session
   const handleGoogleSignIn = async () => {
     setErrorMessage('');
+    setIsGoogleLoading(true);
 
-    // If Google Client ID is configured in app, we use AuthSession.
-    // For immediate seamless testing, we offer real Google OAuth or instant test account
-    Alert.alert(
-      'Sign in with Google',
-      'Choose how you would like to test Google Sign-In:',
-      [
-        {
-          text: 'Use Google Account',
-          onPress: async () => {
-            try {
-              // Real Google OAuth flow via WebBrowser
-              const redirectUrl = AuthSession.makeRedirectUri({ scheme: 'songswipe' });
-              
-              // If user hasn't set GOOGLE_CLIENT_ID yet, notify them and log in with their email
-              const res = await loginWithGoogle({
-                email: email.trim() || 'janred@gmail.com',
-                displayName: displayName.trim() || 'Janred (Google)',
-                photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-              });
+    try {
+      // 1. Create redirect deep-link for Expo Go or standalone app
+      const redirectUri = Linking.createURL('auth');
+      const backendUrl = getBackendUrl();
+      const authUrl = `${backendUrl}/api/auth/google/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`;
 
-              if (res.success) {
-                onClose();
-              } else {
-                setErrorMessage(res.error || 'Google Sign-In failed');
-              }
-            } catch (err) {
-              setErrorMessage(err.message);
-            }
-          },
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ]
-    );
+      // 2. Open authentic Google OAuth browser session
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+
+      if (result.type === 'success' && result.url) {
+        // Parse redirect parameters
+        const parsed = Linking.parse(result.url);
+        let token = parsed.queryParams?.token;
+        let emailParam = parsed.queryParams?.email;
+        let displayNameParam = parsed.queryParams?.displayName;
+        let userId = parsed.queryParams?.userId;
+        let isNewUser = parsed.queryParams?.isNewUser === 'true';
+
+        // Fallback parameter parsing if queryParams is not populated
+        if (!token && result.url.includes('token=')) {
+          const urlStr = result.url.replace(/^[^?]+\?/, 'http://localhost/?');
+          const searchParams = new URL(urlStr).searchParams;
+          token = searchParams.get('token');
+          emailParam = searchParams.get('email');
+          displayNameParam = searchParams.get('displayName');
+          userId = searchParams.get('userId');
+          isNewUser = searchParams.get('isNewUser') === 'true';
+        }
+
+        if (token) {
+          const userObj = {
+            id: userId,
+            email: emailParam,
+            display_name: displayNameParam,
+            auth_provider: 'google',
+          };
+
+          // Update active authentication session
+          setSession(token, userObj);
+
+          // Close sign in modal
+          onClose();
+
+          // Notify parent app to trigger unique username setup
+          if (onGoogleSuccess) {
+            onGoogleSuccess(userObj, isNewUser);
+          }
+        } else {
+          setErrorMessage('Google authentication did not return a session.');
+        }
+      } else if (result.type === 'cancel' || result.type === 'dismiss') {
+        // User dismissed browser - no error needed
+      }
+    } catch (err) {
+      console.warn('Google auth error:', err);
+      setErrorMessage(err.message || 'Could not connect to Google authentication.');
+    } finally {
+      setIsGoogleLoading(false);
+    }
   };
 
   const handleGuest = () => {
@@ -158,20 +219,21 @@ export default function SignInModal({ visible, onClose }) {
               </TouchableOpacity>
             </View>
 
+            {/* View Title & Subtitle */}
             <Text style={styles.welcomeText}>
               {isSignUp ? 'Create your account' : 'Welcome back'}
             </Text>
             <Text style={styles.subtitleText}>
               {isSignUp
-                ? 'Sign up to save your liked tracks to Neon PostgreSQL and Spotify.'
-                : 'Sign in to access your saved playlists and music discoveries.'}
+                ? 'Sign up with a unique username to save tracks to your playlist.'
+                : 'Sign in with your email or username to access your saved songs.'}
             </Text>
 
             {/* Segmented Tab Switcher */}
             <View style={styles.tabContainer}>
               <TouchableOpacity
                 style={[styles.tabBtn, !isSignUp && styles.activeTabBtn]}
-                onPress={() => toggleMode(false)}
+                onPress={() => switchMode('signin')}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.tabText, !isSignUp && styles.activeTabText]}>
@@ -181,7 +243,7 @@ export default function SignInModal({ visible, onClose }) {
 
               <TouchableOpacity
                 style={[styles.tabBtn, isSignUp && styles.activeTabBtn]}
-                onPress={() => toggleMode(true)}
+                onPress={() => switchMode('signup')}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.tabText, isSignUp && styles.activeTabText]}>
@@ -200,38 +262,54 @@ export default function SignInModal({ visible, onClose }) {
 
             {/* Form Inputs */}
             <View style={styles.formContainer}>
+              {/* Unique Username Input (Visible on Create Account) */}
               {isSignUp && (
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} />
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="Your Name"
-                    placeholderTextColor={COLORS.textMuted}
-                    value={displayName}
-                    onChangeText={setDisplayName}
-                    autoCapitalize="words"
-                  />
+                <View>
+                  <Text style={styles.fieldLabel}>Unique Username</Text>
+                  <View style={styles.inputWrapper}>
+                    <Ionicons name="at-outline" size={20} color={COLORS.textSecondary} />
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="Choose unique username (e.g. janred)"
+                      placeholderTextColor={COLORS.textMuted}
+                      value={displayName}
+                      onChangeText={setDisplayName}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </View>
                 </View>
               )}
 
+              {/* Email / Username Input */}
+              <Text style={styles.fieldLabel}>
+                {isSignUp ? 'Email Address' : 'Email or Username'}
+              </Text>
               <View style={styles.inputWrapper}>
-                <Ionicons name="mail-outline" size={20} color={COLORS.textSecondary} />
+                <Ionicons
+                  name={isSignUp ? 'mail-outline' : 'person-outline'}
+                  size={20}
+                  color={COLORS.textSecondary}
+                />
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Email address"
+                  placeholder={isSignUp ? 'your.email@example.com' : 'Email address or username'}
                   placeholderTextColor={COLORS.textMuted}
                   value={email}
                   onChangeText={setEmail}
                   autoCapitalize="none"
                   keyboardType="email-address"
+                  autoCorrect={false}
                 />
               </View>
 
+              {/* Password Input */}
+              <Text style={styles.fieldLabel}>Password</Text>
               <View style={styles.inputWrapper}>
                 <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} />
                 <TextInput
                   style={styles.textInput}
-                  placeholder={isSignUp ? "Password (> 8 chars, A-Z, 0-9, !@#$)" : "Password"}
+                  placeholder={isSignUp ? 'Create a safe password' : 'Enter your password'}
                   placeholderTextColor={COLORS.textMuted}
                   value={password}
                   onChangeText={setPassword}
@@ -247,11 +325,11 @@ export default function SignInModal({ visible, onClose }) {
                 </TouchableOpacity>
               </View>
 
-              {/* Live Password Rules Checklist (visible on Create Account) */}
+              {/* Live Password Rules Checklist (on Create Account) */}
               {isSignUp && (
                 <View style={styles.rulesContainer}>
                   <Text style={styles.rulesTitle}>Password must include:</Text>
-                  
+
                   <View style={styles.ruleRow}>
                     <Ionicons
                       name={hasMinLength ? 'checkmark-circle' : 'ellipse-outline'}
@@ -298,14 +376,14 @@ export default function SignInModal({ visible, onClose }) {
                 </View>
               )}
 
-              {/* Submit Button */}
+              {/* Email/Password Submit Button */}
               <TouchableOpacity
-                style={[styles.primaryBtn, isLoading && { opacity: 0.7 }]}
+                style={[styles.primaryBtn, isEmailLoading && { opacity: 0.75 }]}
                 onPress={handleSubmit}
-                disabled={isLoading}
+                disabled={isEmailLoading || isGoogleLoading}
                 activeOpacity={0.8}
               >
-                {isLoading ? (
+                {isEmailLoading ? (
                   <ActivityIndicator color="#000" />
                 ) : (
                   <Text style={styles.primaryBtnText}>
@@ -322,14 +400,21 @@ export default function SignInModal({ visible, onClose }) {
               <View style={styles.dividerLine} />
             </View>
 
-            {/* Google Sign-In Button */}
+            {/* Authentic Google Sign-In Button */}
             <TouchableOpacity
-              style={styles.googleBtn}
+              style={[styles.googleBtn, isGoogleLoading && { opacity: 0.75 }]}
               onPress={handleGoogleSignIn}
+              disabled={isEmailLoading || isGoogleLoading}
               activeOpacity={0.8}
             >
-              <Ionicons name="logo-google" size={20} color="#EA4335" />
-              <Text style={styles.googleBtnText}>Continue with Google</Text>
+              {isGoogleLoading ? (
+                <ActivityIndicator color={COLORS.textPrimary} />
+              ) : (
+                <View style={styles.googleBtnRow}>
+                  <Ionicons name="logo-google" size={20} color="#EA4335" />
+                  <Text style={styles.googleBtnText}>Continue with Google</Text>
+                </View>
+              )}
             </TouchableOpacity>
 
             {/* Continue as Guest */}
@@ -356,7 +441,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   brandRow: {
     flexDirection: 'row',
@@ -382,21 +467,20 @@ const styles = StyleSheet.create({
   },
   welcomeText: {
     color: COLORS.textPrimary,
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
-    letterSpacing: -0.5,
     marginBottom: 6,
   },
   subtitleText: {
     color: COLORS.textSecondary,
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 22,
+    marginBottom: 20,
   },
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: COLORS.surface,
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 4,
     marginBottom: 20,
   },
@@ -404,31 +488,30 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 10,
+    borderRadius: 8,
   },
   activeTabBtn: {
     backgroundColor: COLORS.cardBackground,
-    ...SHADOWS.button,
   },
   tabText: {
-    color: COLORS.textSecondary,
+    color: COLORS.textMuted,
     fontSize: 14,
     fontWeight: '600',
   },
   activeTabText: {
     color: COLORS.textPrimary,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     backgroundColor: 'rgba(233, 20, 41, 0.12)',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 16,
     borderWidth: 1,
     borderColor: 'rgba(233, 20, 41, 0.3)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
   },
   errorText: {
     color: COLORS.nopeRed,
@@ -439,86 +522,37 @@ const styles = StyleSheet.create({
   formContainer: {
     gap: 14,
   },
+  fieldLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    height: 52,
+    gap: 12,
+    backgroundColor: COLORS.cardBackground,
     borderWidth: 1,
     borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 52,
   },
   textInput: {
     flex: 1,
-    marginLeft: 12,
     color: COLORS.textPrimary,
     fontSize: 15,
   },
-  primaryBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 14,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 6,
-    ...SHADOWS.button,
-  },
-  primaryBtnText: {
-    color: '#000000',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-    gap: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  dividerText: {
-    color: COLORS.textMuted,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  googleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: COLORS.white,
-    borderRadius: 14,
-    height: 52,
-    marginBottom: 16,
-    ...SHADOWS.button,
-  },
-  googleBtnText: {
-    color: '#000000',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  guestBtn: {
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  guestText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
-    textDecorationLine: 'underline',
-  },
   rulesContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 10,
     padding: 12,
     gap: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.06)',
   },
   rulesTitle: {
     color: COLORS.textSecondary,
@@ -534,10 +568,73 @@ const styles = StyleSheet.create({
   ruleText: {
     color: COLORS.textMuted,
     fontSize: 12,
-    fontWeight: '500',
   },
   ruleTextValid: {
     color: COLORS.textPrimary,
+    fontWeight: '600',
+  },
+  primaryBtn: {
+    backgroundColor: COLORS.primary,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  primaryBtnText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  dividerText: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.cardBackground,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    height: 52,
+    borderRadius: 26,
+    marginBottom: 16,
+  },
+  googleBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  googleBtnText: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  guestBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  guestText: {
+    color: COLORS.textMuted,
+    fontSize: 14,
     fontWeight: '600',
   },
 });

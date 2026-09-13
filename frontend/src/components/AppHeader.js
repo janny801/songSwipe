@@ -10,6 +10,7 @@ export default function AppHeader({
   user,
   onOpenSignIn,
   onSignOut,
+  onEditUsername,
 }) {
   const isUserLoggedIn = Boolean(user && user.auth_provider !== 'guest');
 
@@ -17,8 +18,9 @@ export default function AppHeader({
     if (isUserLoggedIn) {
       Alert.alert(
         'Account',
-        `Signed in as ${user.display_name || user.email} (${user.auth_provider === 'google' ? 'Google' : 'Email'})`,
+        `Signed in as @${user.display_name || user.email} (${user.auth_provider === 'google' ? 'Google' : 'Email'})`,
         [
+          { text: 'Change Username', onPress: () => onEditUsername && onEditUsername() },
           { text: 'Sign Out', style: 'destructive', onPress: onSignOut },
           { text: 'Close', style: 'cancel' },
         ]

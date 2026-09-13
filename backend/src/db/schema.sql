@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS playlists (
 CREATE INDEX IF NOT EXISTS idx_playlists_user_id ON playlists(user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_track_id ON playlists(track_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_spotify_id ON tracks(spotify_track_id);
+CREATE UNIQUE INDEX IF NOT EXISTS users_display_name_lower_idx ON users (LOWER(display_name));
 CREATE INDEX IF NOT EXISTS idx_users_spotify_id ON users(spotify_id);
 CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);

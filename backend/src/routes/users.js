@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const { pool, getIsConnected } = require('../config/db');
+const { requireAuth } = require('../middleware/auth');
 
 /**
  * Spotify OAuth Scopes needed for full user linking and playlist export:
@@ -142,6 +143,78 @@ router.get('/spotify/callback', async (req, res) => {
       success: false,
       error: 'OAuth exchange failed',
       details: error.response?.data || error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/users/username
+ * Updates a user's unique username (display_name)
+ */
+router.put('/username', requireAuth, async (req, res) => {
+  const { username } = req.body;
+  const userId = req.user.userId;
+
+  if (!username || !username.trim()) {
+    return res.status(400).json({
+      success: false,
+      error: 'Username is required',
+    });
+  }
+
+  const cleanUsername = username.trim();
+
+  if (cleanUsername.length < 3 || cleanUsername.length > 30) {
+    return res.status(400).json({
+      success: false,
+      error: 'Username must be between 3 and 30 characters',
+    });
+  }
+
+  try {
+    if (getIsConnected()) {
+      // Check if username is already taken by another user
+      const existing = await pool.query(
+        'SELECT id FROM users WHERE LOWER(display_name) = LOWER($1) AND id != $2',
+        [cleanUsername, userId]
+      );
+
+      if (existing.rows.length > 0) {
+        return res.status(409).json({
+          success: false,
+          error: `The username "${cleanUsername}" is already taken. Please choose another.`,
+        });
+      }
+
+      // Update username in PostgreSQL
+      const updateResult = await pool.query(
+        `UPDATE users
+         SET display_name = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2
+         RETURNING id, google_id, spotify_id, display_name, email, profile_image_url, auth_provider`,
+        [cleanUsername, userId]
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: 'Username updated successfully',
+        user: updateResult.rows[0],
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: userId,
+        display_name: cleanUsername,
+      },
+    });
+  } catch (error) {
+    console.error('Update username error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to update username',
+      details: error.message,
     });
   }
 });

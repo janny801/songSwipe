@@ -99,6 +99,26 @@ export function AuthProvider({ children }) {
     setIsGuest(false);
   };
 
+  // Set active session directly (from OAuth deep link)
+  const setSession = (authToken, userObj) => {
+    if (authToken) {
+      setToken(authToken);
+      setAuthToken(authToken);
+    }
+    if (userObj) {
+      setUser(userObj);
+    }
+    setIsGuest(false);
+  };
+
+  // Update user profile in state (e.g. after choosing unique username)
+  const updateUser = (updatedUser) => {
+    setUser((prev) => ({
+      ...prev,
+      ...updatedUser,
+    }));
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -112,6 +132,8 @@ export function AuthProvider({ children }) {
         loginWithGoogle,
         logout,
         continueAsGuest,
+        updateUser,
+        setSession,
       }}
     >
       {children}

@@ -20,6 +20,7 @@ import BottomControls from './src/components/BottomControls';
 import LikedPlaylistModal from './src/components/LikedPlaylistModal';
 import SettingsModal from './src/components/SettingsModal';
 import SignInModal from './src/components/SignInModal';
+import ChooseUsernameModal from './src/components/ChooseUsernameModal';
 
 function MainApp() {
   const { user, logout, isAuthenticated } = useAuth();
@@ -33,6 +34,7 @@ function MainApp() {
   const [isPlaylistVisible, setIsPlaylistVisible] = useState(false);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
+  const [isChooseUsernameVisible, setIsChooseUsernameVisible] = useState(false);
 
   const deckRef = useRef(null);
 
@@ -227,6 +229,7 @@ function MainApp() {
         user={user}
         onOpenSignIn={() => setIsAuthModalVisible(true)}
         onSignOut={logout}
+        onEditUsername={() => setIsChooseUsernameVisible(true)}
       />
 
       {/* Main Swipeable Card Deck */}
@@ -286,6 +289,16 @@ function MainApp() {
       <SignInModal
         visible={isAuthModalVisible}
         onClose={() => setIsAuthModalVisible(false)}
+        onGoogleSuccess={(userObj, isNewUser) => {
+          // Immediately prompt user to choose/confirm unique username after Google sign in
+          setIsChooseUsernameVisible(true);
+        }}
+      />
+
+      {/* Choose Unique Username Modal (Separate Page After Google Login / Profile Edit) */}
+      <ChooseUsernameModal
+        visible={isChooseUsernameVisible}
+        onClose={() => setIsChooseUsernameVisible(false)}
       />
 
       {/* Backend & Diagnostics Settings Modal */}

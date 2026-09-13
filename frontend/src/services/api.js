@@ -4,23 +4,28 @@ import { Platform } from 'react-native';
 // Helper to determine the best default backend URL based on platform & environment
 function getDefaultBackendUrl() {
   // If running in Expo Go on a physical device, expo-constants gives us the dev machine IP
-  const debuggerHost = Constants.expoConfig?.hostUri;
+  const debuggerHost =
+    Constants.expoConfig?.hostUri ||
+    Constants.manifest2?.extra?.expoGo?.debuggerHost ||
+    Constants.manifest?.debuggerHost ||
+    Constants.linkingUri;
+
   if (debuggerHost) {
-    const ip = debuggerHost.split(':')[0];
-    return `http://${ip}:3001`;
+    const cleanHost = String(debuggerHost).replace(/^[a-z]+:\/\//, '');
+    const ip = cleanHost.split(':')[0].split('/')[0];
+
+    // If running via Expo Tunnel, route backend to our active tunnel
+    if (cleanHost.includes('exp.direct') || cleanHost.includes('ngrok')) {
+      return 'https://unsolar-shirl-enquiringly.ngrok-free.dev';
+    }
+
+    if (ip && ip !== 'localhost' && ip !== '127.0.0.1') {
+      return `http://${ip}:3001`;
+    }
   }
 
-  // iOS simulator can always reach localhost
-  if (Platform.OS === 'ios') {
-    return 'http://localhost:3001';
-  }
-
-  // Android emulator loopback
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:3001';
-  }
-
-  return 'http://localhost:3001';
+  // Fallback to active backend tunnel
+  return 'https://unsolar-shirl-enquiringly.ngrok-free.dev';
 }
 
 let activeBaseUrl = getDefaultBackendUrl();
@@ -55,16 +60,37 @@ function getHeaders(extraHeaders = {}) {
   return headers;
 }
 
+// Resilient fetch with a timeout to prevent infinite UI loading spinners
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`Connection timed out after ${timeoutMs / 1000}s. Make sure backend is running.`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const api = {
   /**
    * Healthcheck to verify connectivity with the Express backend
    */
   async checkHealth() {
     try {
-      const response = await fetch(`${activeBaseUrl}/api/health`, {
+      const response = await fetchWithTimeout(`${activeBaseUrl}/api/health`, {
         method: 'GET',
         headers: getHeaders(),
-      });
+      }, 5000);
       return await response.json();
     } catch (error) {
       console.warn('API health check error:', error.message);
@@ -75,10 +101,10 @@ export const api = {
   // ==================== AUTHENTICATION ====================
 
   /**
-   * Register with Email & Password
+   * Register with Email, Username & Password
    */
   async register({ email, password, displayName }) {
-    const response = await fetch(`${activeBaseUrl}/api/auth/register`, {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/auth/register`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ email, password, displayName }),
@@ -95,10 +121,10 @@ export const api = {
   },
 
   /**
-   * Sign in with Email & Password
+   * Sign in with Email or Username & Password
    */
   async login({ email, password }) {
-    const response = await fetch(`${activeBaseUrl}/api/auth/login`, {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/auth/login`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ email, password }),
@@ -118,7 +144,7 @@ export const api = {
    * Sign in / Sign up with Google OAuth
    */
   async googleAuth({ idToken, userProfile }) {
-    const response = await fetch(`${activeBaseUrl}/api/auth/google`, {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/auth/google`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ idToken, userProfile }),
@@ -139,27 +165,31 @@ export const api = {
    */
   async getMe() {
     if (!activeAuthToken) return null;
-    const response = await fetch(`${activeBaseUrl}/api/auth/me`, {
-      method: 'GET',
-      headers: getHeaders(),
-    });
+    try {
+      const response = await fetchWithTimeout(`${activeBaseUrl}/api/auth/me`, {
+        method: 'GET',
+        headers: getHeaders(),
+      }, 5000);
 
-    if (!response.ok) return null;
-    const data = await response.json();
-    return data.user;
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.user;
+    } catch (e) {
+      return null;
+    }
   },
 
   // ==================== TRACKS & PLAYLISTS ====================
 
   /**
-   * Fetches tracks from the backend (which proxies Spotify Web API with client credentials)
+   * Fetches tracks from the backend
    */
-  async fetchTracks(query = 'top hits 2024', limit = 10) {
+  async fetchTracks(query = '', limit = 10) {
     const url = `${activeBaseUrl}/api/tracks?query=${encodeURIComponent(query)}&limit=${limit}`;
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: 'GET',
       headers: getHeaders(),
-    });
+    }, 8000);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch tracks: ${response.statusText}`);
@@ -173,7 +203,7 @@ export const api = {
    * Posts swipe action to backend (right-swipe saves track to user's playlist)
    */
   async swipeTrack({ track, direction = 'right', userId, playlistName = 'Liked Songs' }) {
-    const response = await fetch(`${activeBaseUrl}/api/playlists/swipe`, {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/swipe`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
@@ -199,7 +229,7 @@ export const api = {
     if (userId) params.append('userId', userId);
     if (playlistName) params.append('playlistName', playlistName);
 
-    const response = await fetch(`${activeBaseUrl}/api/playlists?${params.toString()}`, {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists?${params.toString()}`, {
       method: 'GET',
       headers: getHeaders(),
     });
@@ -220,7 +250,7 @@ export const api = {
     if (userId) params.append('userId', userId);
     if (playlistName) params.append('playlistName', playlistName);
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${activeBaseUrl}/api/playlists/${encodeURIComponent(trackId)}?${params.toString()}`,
       {
         method: 'DELETE',
@@ -233,5 +263,22 @@ export const api = {
     }
 
     return await response.json();
+  },
+
+  /**
+   * Update unique username (display_name) for the authenticated user
+   */
+  async updateUsername(username) {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/users/username`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ username }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update username');
+    }
+    return data;
   },
 };
