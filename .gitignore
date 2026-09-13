@@ -1,0 +1,51 @@
+# Node & Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment Files & Configurations
+.env
+.env.*
+*.env
+*.env.*
+.env.example
+*.env.example
+environments
+environments.*
+*.environment*
+
+# Agent & AI Markdown Files
+AGENTS.md
+agents.md
+*AGENTS.md
+CLAUDE.md
+claude.md
+*CLAUDE.md
+.claude/
+.gemini/
+
+# Expo & React Native
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# macOS
+.DS_Store
+*.pem
+
+# Logs & Runtime Data
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.system_generated/
+*.log
+
+# Docker data volume
+songswipe_pg_data/

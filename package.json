@@ -1,0 +1,17 @@
+{
+  "name": "songswipe-root",
+  "version": "1.0.0",
+  "description": "SongSwipe - Fullstack Tinder for Spotify application",
+  "scripts": {
+    "backend": "npm --prefix backend run dev",
+    "backend:start": "npm --prefix backend run start",
+    "frontend": "npm --prefix frontend start",
+    "frontend:ios": "npm --prefix frontend run ios",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "npm --prefix backend run migrate"
+  },
+  "keywords": ["spotify", "react-native", "expo", "express", "postgres"],
+  "author": "",
+  "license": "ISC"
+}
