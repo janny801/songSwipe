@@ -37,10 +37,32 @@ router.post('/register', async (req, res) => {
     });
   }
 
-  if (password.length < 6) {
+  // Validate password complexity rules: > 8 chars, uppercase, number, special char
+  if (password.length <= 8) {
     return res.status(400).json({
       success: false,
-      error: 'Password must be at least 6 characters long',
+      error: 'Password must be more than 8 characters long.',
+    });
+  }
+
+  if (!/[A-Z]/.test(password)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Password must contain at least one uppercase letter (A-Z).',
+    });
+  }
+
+  if (!/[0-9]/.test(password)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Password must contain at least one number (0-9).',
+    });
+  }
+
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Password must contain at least one special character (!, @, #, $, %, etc.).',
     });
   }
 

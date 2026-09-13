@@ -37,6 +37,12 @@ export default function SignInModal({ visible, onClose }) {
     setErrorMessage('');
   };
 
+  // Live password complexity checks
+  const hasMinLength = password.length > 8;
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password);
+
   // Submit Email/Password
   const handleSubmit = async () => {
     setErrorMessage('');
@@ -47,8 +53,20 @@ export default function SignInModal({ visible, onClose }) {
     }
 
     if (isSignUp) {
-      if (password.length < 6) {
-        setErrorMessage('Password must be at least 6 characters.');
+      if (!hasMinLength) {
+        setErrorMessage('Password must be more than 8 characters long.');
+        return;
+      }
+      if (!hasUppercase) {
+        setErrorMessage('Password must contain at least one uppercase letter (A-Z).');
+        return;
+      }
+      if (!hasNumber) {
+        setErrorMessage('Password must contain at least one number (0-9).');
+        return;
+      }
+      if (!hasSpecial) {
+        setErrorMessage('Password must contain at least one special character (!, @, #, $, etc.).');
         return;
       }
       const res = await register(email.trim(), password, displayName.trim());
@@ -213,7 +231,7 @@ export default function SignInModal({ visible, onClose }) {
                 <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} />
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Password (min. 6 characters)"
+                  placeholder={isSignUp ? "Password (> 8 chars, A-Z, 0-9, !@#$)" : "Password"}
                   placeholderTextColor={COLORS.textMuted}
                   value={password}
                   onChangeText={setPassword}
@@ -228,6 +246,57 @@ export default function SignInModal({ visible, onClose }) {
                   />
                 </TouchableOpacity>
               </View>
+
+              {/* Live Password Rules Checklist (visible on Create Account) */}
+              {isSignUp && (
+                <View style={styles.rulesContainer}>
+                  <Text style={styles.rulesTitle}>Password must include:</Text>
+                  
+                  <View style={styles.ruleRow}>
+                    <Ionicons
+                      name={hasMinLength ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={14}
+                      color={hasMinLength ? COLORS.primary : COLORS.textMuted}
+                    />
+                    <Text style={[styles.ruleText, hasMinLength && styles.ruleTextValid]}>
+                      More than 8 characters
+                    </Text>
+                  </View>
+
+                  <View style={styles.ruleRow}>
+                    <Ionicons
+                      name={hasUppercase ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={14}
+                      color={hasUppercase ? COLORS.primary : COLORS.textMuted}
+                    />
+                    <Text style={[styles.ruleText, hasUppercase && styles.ruleTextValid]}>
+                      At least one uppercase letter (A-Z)
+                    </Text>
+                  </View>
+
+                  <View style={styles.ruleRow}>
+                    <Ionicons
+                      name={hasNumber ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={14}
+                      color={hasNumber ? COLORS.primary : COLORS.textMuted}
+                    />
+                    <Text style={[styles.ruleText, hasNumber && styles.ruleTextValid]}>
+                      At least one number (0-9)
+                    </Text>
+                  </View>
+
+                  <View style={styles.ruleRow}>
+                    <Ionicons
+                      name={hasSpecial ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={14}
+                      color={hasSpecial ? COLORS.primary : COLORS.textMuted}
+                    />
+                    <Text style={[styles.ruleText, hasSpecial && styles.ruleTextValid]}>
+                      At least one special character (!, @, #, $, %, etc.)
+                    </Text>
+                  </View>
+                </View>
+              )}
 
               {/* Submit Button */}
               <TouchableOpacity
@@ -442,5 +511,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  rulesContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 12,
+    padding: 12,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  rulesTitle: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  ruleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  ruleText: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  ruleTextValid: {
+    color: COLORS.textPrimary,
+    fontWeight: '600',
   },
 });
