@@ -18,7 +18,20 @@ import { COLORS } from '../constants/theme';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-export default function ProfileModal({ visible, onClose }) {
+const AVAILABLE_GENRES = [
+  { id: 'pop', label: 'Pop', icon: 'musical-note' },
+  { id: 'rock', label: 'Rock', icon: 'flame' },
+  { id: 'hip-hop', label: 'Hip-Hop', icon: 'mic' },
+  { id: 'r-b', label: 'R&B', icon: 'heart' },
+  { id: 'indie', label: 'Indie', icon: 'leaf' },
+  { id: 'electronic', label: 'Electronic', icon: 'pulse' },
+  { id: 'country', label: 'Country', icon: 'radio' },
+  { id: 'latin', label: 'Latin', icon: 'flash' },
+  { id: 'jazz', label: 'Jazz', icon: 'cafe' },
+  { id: 'classical', label: 'Classical', icon: 'library' },
+];
+
+export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
   const { user, updateUser, logout } = useAuth();
 
   const [username, setUsername] = useState('');
@@ -26,14 +39,53 @@ export default function ProfileModal({ visible, onClose }) {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Sync username whenever modal opens
+  // Genres state
+  const [selectedGenres, setSelectedGenres] = useState([]);
+  const [isSavingGenres, setIsSavingGenres] = useState(false);
+  const [genreSuccessMessage, setGenreSuccessMessage] = useState('');
+  const [genreErrorMessage, setGenreErrorMessage] = useState('');
+
+  // Sync profile data whenever modal opens
   useEffect(() => {
     if (visible && user) {
       setUsername(user.display_name || user.email?.split('@')[0] || '');
+      setSelectedGenres(Array.isArray(user.favorite_genres) ? user.favorite_genres : []);
       setErrorMessage('');
       setSuccessMessage('');
+      setGenreSuccessMessage('');
+      setGenreErrorMessage('');
     }
   }, [visible, user]);
+
+  const toggleGenre = (genreId) => {
+    setGenreSuccessMessage('');
+    setGenreErrorMessage('');
+    setSelectedGenres((prev) =>
+      prev.includes(genreId) ? prev.filter((g) => g !== genreId) : [...prev, genreId]
+    );
+  };
+
+  const handleSaveGenres = async () => {
+    setIsSavingGenres(true);
+    setGenreSuccessMessage('');
+    setGenreErrorMessage('');
+    try {
+      const res = await api.updateGenres(selectedGenres);
+      if (res.success && res.user) {
+        updateUser(res.user);
+        setGenreSuccessMessage('Music preferences saved! Next song batch will adapt to your genres.');
+        if (onGenresUpdated) {
+          onGenresUpdated();
+        }
+      } else {
+        setGenreErrorMessage(res.error || 'Failed to save preferences.');
+      }
+    } catch (err) {
+      setGenreErrorMessage(err.message || 'Failed to save preferences.');
+    } finally {
+      setIsSavingGenres(false);
+    }
+  };
 
   const handleSaveUsername = async () => {
     setErrorMessage('');
@@ -207,6 +259,86 @@ export default function ProfileModal({ visible, onClose }) {
                   <View style={styles.saveBtnRow}>
                     <Ionicons name="checkmark-sharp" size={18} color="#000" />
                     <Text style={styles.saveBtnText}>Save Changes</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Favorite Music Genres Section */}
+            <View style={styles.genresSection}>
+              <View style={styles.genreHeaderRow}>
+                <Ionicons name="musical-notes" size={20} color={COLORS.primary} />
+                <Text style={styles.sectionTitle}>Favorite Music Genres</Text>
+              </View>
+              <Text style={styles.sectionSubtitle}>
+                Select the genres you love so SongSwipe can curate cards tailored to your taste.
+              </Text>
+
+              {/* Genre Feedback Banners */}
+              {genreErrorMessage ? (
+                <View style={styles.errorBanner}>
+                  <Ionicons name="alert-circle" size={16} color={COLORS.nopeRed} />
+                  <Text style={styles.errorText}>{genreErrorMessage}</Text>
+                </View>
+              ) : null}
+
+              {genreSuccessMessage ? (
+                <View style={styles.successBanner}>
+                  <Ionicons name="checkmark-circle" size={16} color={COLORS.primary} />
+                  <Text style={styles.successText}>{genreSuccessMessage}</Text>
+                </View>
+              ) : null}
+
+              {/* Genre Chips Grid */}
+              <View style={styles.genreGrid}>
+                {AVAILABLE_GENRES.map((g) => {
+                  const isSelected = selectedGenres.includes(g.id);
+                  return (
+                    <TouchableOpacity
+                      key={g.id}
+                      style={[styles.genreChip, isSelected && styles.genreChipSelected]}
+                      onPress={() => toggleGenre(g.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name={g.icon}
+                        size={15}
+                        color={isSelected ? '#000' : COLORS.textSecondary}
+                      />
+                      <Text
+                        style={[
+                          styles.genreChipText,
+                          isSelected && styles.genreChipTextSelected,
+                        ]}
+                      >
+                        {g.label}
+                      </Text>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={14} color="#000" />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.genreCountText}>
+                {selectedGenres.length === 0
+                  ? 'No genres selected • Swipe feed shows all trending hits'
+                  : `${selectedGenres.length} genre${selectedGenres.length > 1 ? 's' : ''} selected • Feed tailored to your picks`}
+              </Text>
+
+              <TouchableOpacity
+                style={[styles.saveGenresBtn, isSavingGenres && { opacity: 0.7 }]}
+                onPress={handleSaveGenres}
+                disabled={isSavingGenres}
+                activeOpacity={0.8}
+              >
+                {isSavingGenres ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <View style={styles.saveBtnRow}>
+                    <Ionicons name="sparkles" size={16} color="#000" />
+                    <Text style={styles.saveBtnText}>Save Music Preferences</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -432,6 +564,63 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: COLORS.border,
     marginVertical: 24,
+  },
+  genresSection: {
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 10,
+  },
+  genreHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  genreGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginVertical: 14,
+  },
+  genreChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  genreChipSelected: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  genreChipText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  genreChipTextSelected: {
+    color: '#000',
+    fontWeight: '800',
+  },
+  genreCountText: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    marginBottom: 14,
+    paddingHorizontal: 2,
+  },
+  saveGenresBtn: {
+    backgroundColor: COLORS.primary,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   signOutBtn: {
     flexDirection: 'row',

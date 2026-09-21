@@ -932,7 +932,7 @@ router.get('/me', requireAuth, async (req, res) => {
   try {
     if (getIsConnected()) {
       const result = await pool.query(
-        `SELECT id, google_id, spotify_id, display_name, email, profile_image_url, auth_provider, has_chosen_username, created_at
+        `SELECT id, google_id, spotify_id, display_name, email, profile_image_url, auth_provider, has_chosen_username, favorite_genres, created_at
          FROM users
          WHERE id = $1`,
         [req.user.userId]
@@ -953,6 +953,7 @@ router.get('/me', requireAuth, async (req, res) => {
         success: true,
         user: {
           ...dbUser,
+          favorite_genres: dbUser.favorite_genres || [],
           likedCount: parseInt(countResult.rows[0]?.liked_count || 0, 10),
           needsUsername: !dbUser.has_chosen_username,
         },
@@ -968,6 +969,7 @@ router.get('/me', requireAuth, async (req, res) => {
       success: true,
       user: {
         ...inMemUser,
+        favorite_genres: inMemUser.favorite_genres || [],
         likedCount: 0,
         needsUsername: !inMemUser.has_chosen_username,
       },

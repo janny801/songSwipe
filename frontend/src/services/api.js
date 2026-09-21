@@ -184,8 +184,15 @@ export const api = {
   /**
    * Fetches tracks from the backend
    */
-  async fetchTracks(query = '', limit = 10) {
-    const url = `${activeBaseUrl}/api/tracks?query=${encodeURIComponent(query)}&limit=${limit}`;
+  async fetchTracks(query = '', limit = 10, genre = '', userId = null) {
+    const params = new URLSearchParams();
+    if (query) params.append('query', query);
+    if (limit) params.append('limit', limit);
+    if (genre) params.append('genre', genre);
+    if (userId) params.append('userId', userId);
+    params.append('_t', Date.now().toString());
+
+    const url = `${activeBaseUrl}/api/tracks?${params.toString()}`;
     const response = await fetchWithTimeout(url, {
       method: 'GET',
       headers: getHeaders(),
@@ -279,6 +286,23 @@ export const api = {
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.error || 'Failed to update username');
+    }
+    return data;
+  },
+
+  /**
+   * Update favorite genres for the authenticated user
+   */
+  async updateGenres(genres) {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/users/genres`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ genres }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update genres');
     }
     return data;
   },

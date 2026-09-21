@@ -66,7 +66,7 @@ function MainApp() {
     setIsLoadingTracks(true);
     await stopAudio();
     try {
-      const fetched = await api.fetchTracks();
+      const fetched = await api.fetchTracks('', 10, '', user?.id);
       setTracks(fetched);
       setCurrentIndex(0);
     } catch (error) {
@@ -79,7 +79,7 @@ function MainApp() {
     } finally {
       setIsLoadingTracks(false);
     }
-  }, [stopAudio]);
+  }, [stopAudio, user?.id]);
 
   // Load liked tracks (only for authenticated users)
   const loadLikedPlaylist = useCallback(async () => {
@@ -310,10 +310,13 @@ function MainApp() {
         }}
       />
 
-      {/* User Account & Profile Modal (modify unique username & sign out) */}
+      {/* User Account & Profile Modal (modify unique username, select favorite genres & sign out) */}
       <ProfileModal
         visible={isProfileVisible}
         onClose={() => setIsProfileVisible(false)}
+        onGenresUpdated={() => {
+          loadTracks();
+        }}
       />
 
       {/* Backend & Diagnostics Settings Modal */}

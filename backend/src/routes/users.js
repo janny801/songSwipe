@@ -243,4 +243,66 @@ router.put('/username', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * PUT /api/users/genres
+ * Updates a user's favorite genres for personalized song recommendations
+ */
+router.put('/genres', requireAuth, async (req, res) => {
+  const { genres } = req.body;
+  const userId = req.user.userId;
+
+  if (!Array.isArray(genres)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Genres must be an array of strings',
+    });
+  }
+
+  // Clean and filter valid string genres (max 15 genres)
+  const cleanGenres = genres
+    .map((g) => (typeof g === 'string' ? g.trim() : ''))
+    .filter((g) => g.length > 0 && g.length <= 40)
+    .slice(0, 15);
+
+  try {
+    if (getIsConnected()) {
+      const updateResult = await pool.query(
+        `UPDATE users
+         SET favorite_genres = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2
+         RETURNING id, google_id, spotify_id, display_name, email, profile_image_url, auth_provider, has_chosen_username, favorite_genres`,
+        [cleanGenres, userId]
+      );
+
+      if (updateResult.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'User not found' });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Favorite genres updated successfully',
+        user: {
+          ...updateResult.rows[0],
+          favorite_genres: updateResult.rows[0].favorite_genres || [],
+        },
+      });
+    }
+
+    // In-memory fallback
+    const updated = inMemoryStore.updateGenres(userId, cleanGenres);
+    return res.status(200).json({
+      success: true,
+      message: 'Favorite genres updated successfully',
+      user: updated || { id: userId, favorite_genres: cleanGenres },
+    });
+  } catch (error) {
+    console.error('Update genres error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to update genres',
+      details: error.message,
+    });
+  }
+});
+
 module.exports = router;

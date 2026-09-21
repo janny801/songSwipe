@@ -230,24 +230,42 @@ const POPULAR_ARTISTS = [
  * Fetches tracks from Spotify Web API and enriches them with genuine 30-second audio previews.
  * Resolves real studio previews if Spotify's preview_url is null (Spotify deprecated preview_url in 2024).
  */
-async function fetchSpotifyTracks({ query = '', limit = 15, genre = '' } = {}) {
+async function fetchSpotifyTracks({ query = '', limit = 15, genre = '', userGenres = [] } = {}) {
   const token = await getClientCredentialsToken();
 
   if (!token) {
     console.log('ℹ️ Spotify credentials not detected or invalid. Returning curated demo tracks with real audio previews.');
+    let tracks = FALLBACK_TRACKS;
+    if (Array.isArray(userGenres) && userGenres.length > 0) {
+      const lower = userGenres.map((g) => g.toLowerCase());
+      const filtered = FALLBACK_TRACKS.filter((t) =>
+        lower.some((g) => t.genre && t.genre.toLowerCase().includes(g))
+      );
+      if (filtered.length > 0) {
+        tracks = filtered;
+      }
+    }
     return {
       source: 'fallback',
       message: 'Using demo tracks. Configure CLIENT_ID and CLIENT_SECRET in backend/.env for live Spotify tracks.',
-      tracks: FALLBACK_TRACKS,
+      tracks,
     };
   }
 
   try {
     let searchQuery = query;
     if (!searchQuery || searchQuery.trim() === '' || searchQuery === 'top hits' || searchQuery === 'top hits 2024') {
-      // Pick a rotating popular artist/genre for rich and recognizable hits
-      const randomArtist = POPULAR_ARTISTS[Math.floor(Math.random() * POPULAR_ARTISTS.length)];
-      searchQuery = genre ? `genre:"${genre}"` : randomArtist;
+      let targetGenre = genre;
+      if (!targetGenre && Array.isArray(userGenres) && userGenres.length > 0) {
+        targetGenre = userGenres[Math.floor(Math.random() * userGenres.length)];
+      }
+
+      if (targetGenre) {
+        searchQuery = `genre:"${targetGenre.toLowerCase()}"`;
+      } else {
+        const randomArtist = POPULAR_ARTISTS[Math.floor(Math.random() * POPULAR_ARTISTS.length)];
+        searchQuery = randomArtist;
+      }
     }
 
     const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 10);

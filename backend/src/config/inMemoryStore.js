@@ -91,6 +91,7 @@ function createUser(userData) {
     password_hash: userData.password_hash || null,
     auth_provider: userData.auth_provider || 'email',
     has_chosen_username: Boolean(userData.has_chosen_username),
+    favorite_genres: Array.isArray(userData.favorite_genres) ? userData.favorite_genres : [],
     profile_image_url: userData.profile_image_url || null,
     created_at: new Date().toISOString(),
   };
@@ -107,6 +108,14 @@ function updateUsername(userId, newUsername) {
   return user;
 }
 
+function updateGenres(userId, genres) {
+  const user = inMemoryUsers.get(userId);
+  if (!user) return null;
+  user.favorite_genres = Array.isArray(genres) ? genres : [];
+  user.updated_at = new Date().toISOString();
+  return user;
+}
+
 module.exports = {
   inMemoryUsers,
   findUserByEmailOrUsername,
@@ -115,4 +124,5 @@ module.exports = {
   usernameExists,
   createUser,
   updateUsername,
+  updateGenres,
 };
