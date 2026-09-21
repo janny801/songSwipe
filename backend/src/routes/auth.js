@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const { pool, getIsConnected } = require('../config/db');
 const { JWT_SECRET, requireAuth } = require('../middleware/auth');
+const inMemoryStore = require('../config/inMemoryStore');
 
 // Optional Google OAuth Client (used if GOOGLE_CLIENT_ID is configured)
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
@@ -83,6 +84,13 @@ router.post('/register', async (req, res) => {
     });
   }
 
+  if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Username can only contain letters, numbers, and underscores.',
+    });
+  }
+
   try {
     const passwordHash = await bcrypt.hash(password, 10);
 
@@ -107,15 +115,15 @@ router.post('/register', async (req, res) => {
       if (existingUsername.rows.length > 0) {
         return res.status(409).json({
           success: false,
-          error: 'This username is already taken. Please choose another.',
+          error: `The username "${username}" is already taken. Please choose another.`,
         });
       }
 
       // 3. Insert new user
       const result = await pool.query(
-        `INSERT INTO users (email, password_hash, display_name, auth_provider)
-         VALUES ($1, $2, $3, 'email')
-         RETURNING id, email, display_name, profile_image_url, auth_provider, created_at`,
+        `INSERT INTO users (email, password_hash, display_name, auth_provider, has_chosen_username)
+         VALUES ($1, $2, $3, 'email', TRUE)
+         RETURNING id, email, display_name, profile_image_url, auth_provider, has_chosen_username, created_at`,
         [normalizedEmail, passwordHash, username]
       );
 
@@ -126,25 +134,45 @@ router.post('/register', async (req, res) => {
         success: true,
         message: 'Account created successfully',
         token,
-        user,
+        user: {
+          ...user,
+          needsUsername: false,
+        },
       });
     }
 
     // In-memory fallback
-    const fallbackUser = {
-      id: `usr-${Date.now()}`,
+    if (inMemoryStore.emailExists(normalizedEmail)) {
+      return res.status(409).json({
+        success: false,
+        error: 'An account with this email already exists. Please sign in.',
+      });
+    }
+
+    if (inMemoryStore.usernameExists(username)) {
+      return res.status(409).json({
+        success: false,
+        error: `The username "${username}" is already taken. Please choose another.`,
+      });
+    }
+
+    const fallbackUser = inMemoryStore.createUser({
       email: normalizedEmail,
       display_name: username,
+      password_hash: passwordHash,
       auth_provider: 'email',
-      profile_image_url: null,
-    };
+      has_chosen_username: true,
+    });
     const token = generateToken(fallbackUser);
 
     return res.status(201).json({
       success: true,
-      message: 'Account created (in-memory mode)',
+      message: 'Account created successfully',
       token,
-      user: fallbackUser,
+      user: {
+        ...fallbackUser,
+        needsUsername: false,
+      },
     });
   } catch (error) {
     console.error('Registration error:', error);
@@ -174,9 +202,9 @@ router.post('/login', async (req, res) => {
 
   try {
     if (getIsConnected()) {
-      // Find user by either email OR username!
+      // Find user by either email OR username
       const result = await pool.query(
-        `SELECT id, email, password_hash, display_name, profile_image_url, auth_provider
+        `SELECT id, email, password_hash, display_name, profile_image_url, auth_provider, has_chosen_username
          FROM users
          WHERE LOWER(email) = $1 OR LOWER(display_name) = $1`,
         [identifier]
@@ -185,7 +213,7 @@ router.post('/login', async (req, res) => {
       if (result.rows.length === 0) {
         return res.status(401).json({
           success: false,
-          error: 'Invalid email/username or password',
+          error: 'No account found with this email or username. Please create an account first.',
         });
       }
 
@@ -202,7 +230,7 @@ router.post('/login', async (req, res) => {
       if (!isValid) {
         return res.status(401).json({
           success: false,
-          error: 'Invalid email/username or password',
+          error: 'Incorrect password. Please try again.',
         });
       }
 
@@ -213,23 +241,48 @@ router.post('/login', async (req, res) => {
         success: true,
         message: 'Signed in successfully',
         token,
-        user,
+        user: {
+          ...user,
+          needsUsername: !user.has_chosen_username,
+        },
       });
     }
 
-    // In-memory demo login
-    const user = {
-      id: '00000000-0000-0000-0000-000000000001',
-      email: identifier,
-      display_name: identifier.split('@')[0],
-      auth_provider: 'email',
-    };
-    const token = generateToken(user);
+    // In-memory fallback
+    const user = inMemoryStore.findUserByEmailOrUsername(identifier);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'No account found with this email or username. Please create an account first.',
+      });
+    }
+
+    if (!user.password_hash) {
+      return res.status(400).json({
+        success: false,
+        error: `This account was registered with ${user.auth_provider === 'google' ? 'Google' : 'Spotify'}. Please sign in with ${user.auth_provider === 'google' ? 'Google' : 'Spotify'}.`,
+      });
+    }
+
+    const isValid = await bcrypt.compare(password, user.password_hash);
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        error: 'Incorrect password. Please try again.',
+      });
+    }
+
+    const userCopy = { ...user };
+    delete userCopy.password_hash;
+    const token = generateToken(userCopy);
 
     return res.status(200).json({
       success: true,
       token,
-      user,
+      user: {
+        ...userCopy,
+        needsUsername: !userCopy.has_chosen_username,
+      },
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -584,7 +637,7 @@ router.post('/google/callback-web', async (req, res) => {
     if (getIsConnected()) {
       // 1. Check if email exists
       const existing = await pool.query(
-        `SELECT id, google_id, email, display_name, profile_image_url, auth_provider
+        `SELECT id, google_id, email, display_name, profile_image_url, auth_provider, has_chosen_username
          FROM users
          WHERE LOWER(email) = LOWER($1)`,
         [email]
@@ -599,49 +652,62 @@ router.post('/google/callback-web', async (req, res) => {
             `UPDATE users
              SET google_id = $1, updated_at = CURRENT_TIMESTAMP
              WHERE id = $2
-             RETURNING id, google_id, display_name, email, profile_image_url, auth_provider`,
+             RETURNING id, google_id, display_name, email, profile_image_url, auth_provider, has_chosen_username`,
             [`google-${Date.now()}`, user.id]
           );
           user = upd.rows[0];
         }
       } else {
-        // New Google user: determine unique display_name
+        // New Google user: generate a temporary provisional unique display_name
         isNewUser = true;
-        let uniqueName = displayName || email.split('@')[0];
-        const nameCheck = await pool.query(
-          'SELECT id FROM users WHERE LOWER(display_name) = LOWER($1)',
-          [uniqueName]
-        );
-        if (nameCheck.rows.length > 0) {
-          uniqueName = `${uniqueName}_${Math.floor(100 + Math.random() * 900)}`;
+        let baseName = (displayName || email.split('@')[0]).replace(/[^a-zA-Z0-9_]/g, '');
+        if (baseName.length < 3) baseName = `user_${baseName}`;
+        let candidate = baseName;
+        let counter = 1;
+        while (true) {
+          const check = await pool.query('SELECT id FROM users WHERE LOWER(display_name) = LOWER($1)', [candidate]);
+          if (check.rows.length === 0) break;
+          candidate = `${baseName}_${Math.floor(1000 + Math.random() * 9000)}`;
+          counter++;
+          if (counter > 10) {
+            candidate = `user_${Date.now()}`;
+            break;
+          }
         }
 
         const inserted = await pool.query(
-          `INSERT INTO users (google_id, email, display_name, auth_provider)
-           VALUES ($1, $2, $3, 'google')
-           RETURNING id, google_id, display_name, email, profile_image_url, auth_provider`,
-          [`google-${Date.now()}`, email, uniqueName]
+          `INSERT INTO users (google_id, email, display_name, auth_provider, has_chosen_username)
+           VALUES ($1, $2, $3, 'google', FALSE)
+           RETURNING id, google_id, display_name, email, profile_image_url, auth_provider, has_chosen_username`,
+          [`google-${Date.now()}`, email, candidate]
         );
         user = inserted.rows[0];
       }
     } else {
       // In-memory fallback
-      user = {
-        id: `usr-google-${Date.now()}`,
-        email,
-        display_name: displayName,
-        auth_provider: 'google',
-      };
-      isNewUser = true;
+      const existing = inMemoryStore.findUserByEmailOrUsername(email);
+      if (existing) {
+        user = existing;
+        isNewUser = false;
+      } else {
+        isNewUser = true;
+        user = inMemoryStore.createUser({
+          email,
+          display_name: displayName || email.split('@')[0],
+          auth_provider: 'google',
+          has_chosen_username: false,
+        });
+      }
     }
 
+    const needsUsername = isNewUser || !user.has_chosen_username;
     const token = generateToken(user);
     const sep = redirectUri.includes('?') ? '&' : '?';
     const targetUrl = `${redirectUri}${sep}token=${encodeURIComponent(token)}&userId=${encodeURIComponent(
       user.id
     )}&email=${encodeURIComponent(user.email)}&displayName=${encodeURIComponent(
       user.display_name
-    )}&isNewUser=${isNewUser}`;
+    )}&isNewUser=${isNewUser}&needsUsername=${needsUsername}&hasChosenUsername=${Boolean(user.has_chosen_username)}`;
 
     // Send HTTP 302 + HTML script redirect for maximum compatibility with WebBrowser
     const redirectHtml = `<!DOCTYPE html>
@@ -728,7 +794,7 @@ router.post('/google', async (req, res) => {
     if (getIsConnected()) {
       // A. Check if a user with this email already exists
       const existingEmailResult = await pool.query(
-        `SELECT id, google_id, email, display_name, profile_image_url, auth_provider
+        `SELECT id, google_id, email, display_name, profile_image_url, auth_provider, has_chosen_username
          FROM users
          WHERE LOWER(email) = LOWER($1)`,
         [googleUser.email]
@@ -743,7 +809,7 @@ router.post('/google', async (req, res) => {
                profile_image_url = COALESCE(profile_image_url, $2),
                updated_at = CURRENT_TIMESTAMP
            WHERE id = $3
-           RETURNING id, google_id, display_name, email, profile_image_url, auth_provider`,
+           RETURNING id, google_id, display_name, email, profile_image_url, auth_provider, has_chosen_username`,
           [googleUser.googleId, googleUser.profileImageUrl, existingUser.id]
         );
 
@@ -753,34 +819,55 @@ router.post('/google', async (req, res) => {
           success: true,
           message: 'Signed in with Google successfully!',
           token,
-          user,
+          user: {
+            ...user,
+            needsUsername: !user.has_chosen_username,
+          },
         });
       }
 
       // B. New user with Google: verify uniqueness of chosen username (display_name)
       let uniqueDisplayName = googleUser.displayName;
-      const existingNameResult = await pool.query(
-        'SELECT id FROM users WHERE LOWER(display_name) = LOWER($1)',
-        [uniqueDisplayName]
-      );
+      const isCustom = googleUser.isCustomUsername;
 
-      if (existingNameResult.rows.length > 0) {
-        if (googleUser.isCustomUsername) {
+      if (isCustom) {
+        if (!/^[a-zA-Z0-9_]+$/.test(uniqueDisplayName) || uniqueDisplayName.length < 3 || uniqueDisplayName.length > 30) {
+          return res.status(400).json({
+            success: false,
+            error: 'Username must be between 3 and 30 characters and contain only letters, numbers, and underscores.',
+          });
+        }
+        const existingNameResult = await pool.query(
+          'SELECT id FROM users WHERE LOWER(display_name) = LOWER($1)',
+          [uniqueDisplayName]
+        );
+        if (existingNameResult.rows.length > 0) {
           return res.status(409).json({
             success: false,
             error: `The username "${uniqueDisplayName}" is already taken. Please choose another username.`,
           });
         }
-        // If not custom (auto-derived from Google), make it uniquely recognizable
-        uniqueDisplayName = `${uniqueDisplayName}_${Math.floor(100 + Math.random() * 900)}`;
+      } else {
+        // Auto-derived candidate guaranteed unique
+        let baseName = uniqueDisplayName.replace(/[^a-zA-Z0-9_]/g, '');
+        if (baseName.length < 3) baseName = `user_${baseName}`;
+        uniqueDisplayName = baseName;
+        let counter = 1;
+        while (true) {
+          const check = await pool.query('SELECT id FROM users WHERE LOWER(display_name) = LOWER($1)', [uniqueDisplayName]);
+          if (check.rows.length === 0) break;
+          uniqueDisplayName = `${baseName}_${Math.floor(1000 + Math.random() * 9000)}`;
+          counter++;
+          if (counter > 10) { uniqueDisplayName = `user_${Date.now()}`; break; }
+        }
       }
 
       // C. Insert new Google user
       const insertResult = await pool.query(
-        `INSERT INTO users (google_id, email, display_name, profile_image_url, auth_provider)
-         VALUES ($1, $2, $3, $4, 'google')
-         RETURNING id, google_id, display_name, email, profile_image_url, auth_provider`,
-        [googleUser.googleId, googleUser.email, uniqueDisplayName, googleUser.profileImageUrl]
+        `INSERT INTO users (google_id, email, display_name, profile_image_url, auth_provider, has_chosen_username)
+         VALUES ($1, $2, $3, $4, 'google', $5)
+         RETURNING id, google_id, display_name, email, profile_image_url, auth_provider, has_chosen_username`,
+        [googleUser.googleId, googleUser.email, uniqueDisplayName, googleUser.profileImageUrl, Boolean(isCustom)]
       );
 
       const user = insertResult.rows[0];
@@ -790,25 +877,43 @@ router.post('/google', async (req, res) => {
         success: true,
         message: 'Signed in with Google successfully!',
         token,
-        user,
+        user: {
+          ...user,
+          needsUsername: !user.has_chosen_username,
+        },
       });
     }
 
     // In-memory fallback
-    const fallbackUser = {
-      id: `usr-google-${Date.now()}`,
-      google_id: googleUser.googleId,
+    const existing = inMemoryStore.findUserByEmailOrUsername(googleUser.email);
+    if (existing) {
+      const token = generateToken(existing);
+      return res.status(200).json({
+        success: true,
+        token,
+        user: {
+          ...existing,
+          needsUsername: !existing.has_chosen_username,
+        },
+      });
+    }
+
+    const fallbackUser = inMemoryStore.createUser({
       email: googleUser.email,
       display_name: googleUser.displayName,
       profile_image_url: googleUser.profileImageUrl,
       auth_provider: 'google',
-    };
+      has_chosen_username: Boolean(googleUser.isCustomUsername),
+    });
     const token = generateToken(fallbackUser);
 
     return res.status(200).json({
       success: true,
       token,
-      user: fallbackUser,
+      user: {
+        ...fallbackUser,
+        needsUsername: !fallbackUser.has_chosen_username,
+      },
     });
   } catch (error) {
     console.error('Google auth error:', error);
@@ -827,7 +932,7 @@ router.get('/me', requireAuth, async (req, res) => {
   try {
     if (getIsConnected()) {
       const result = await pool.query(
-        `SELECT id, google_id, spotify_id, display_name, email, profile_image_url, auth_provider, created_at
+        `SELECT id, google_id, spotify_id, display_name, email, profile_image_url, auth_provider, has_chosen_username, created_at
          FROM users
          WHERE id = $1`,
         [req.user.userId]
@@ -843,21 +948,28 @@ router.get('/me', requireAuth, async (req, res) => {
         [req.user.userId]
       );
 
+      const dbUser = result.rows[0];
       return res.status(200).json({
         success: true,
         user: {
-          ...result.rows[0],
+          ...dbUser,
           likedCount: parseInt(countResult.rows[0]?.liked_count || 0, 10),
+          needsUsername: !dbUser.has_chosen_username,
         },
       });
+    }
+
+    const inMemUser = inMemoryStore.findUserById(req.user.userId);
+    if (!inMemUser) {
+      return res.status(404).json({ success: false, error: 'User not found' });
     }
 
     return res.status(200).json({
       success: true,
       user: {
-        id: req.user.userId,
-        email: req.user.email,
-        display_name: req.user.displayName,
+        ...inMemUser,
+        likedCount: 0,
+        needsUsername: !inMemUser.has_chosen_username,
       },
     });
   } catch (error) {

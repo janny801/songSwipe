@@ -3,6 +3,7 @@ const router = express.Router();
 const axios = require('axios');
 const { pool, getIsConnected } = require('../config/db');
 const { requireAuth } = require('../middleware/auth');
+const inMemoryStore = require('../config/inMemoryStore');
 
 /**
  * Spotify OAuth Scopes needed for full user linking and playlist export:
@@ -171,6 +172,13 @@ router.put('/username', requireAuth, async (req, res) => {
     });
   }
 
+  if (!/^[a-zA-Z0-9_]+$/.test(cleanUsername)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Username can only contain letters, numbers, and underscores',
+    });
+  }
+
   try {
     if (getIsConnected()) {
       // Check if username is already taken by another user
@@ -186,27 +194,43 @@ router.put('/username', requireAuth, async (req, res) => {
         });
       }
 
-      // Update username in PostgreSQL
+      // Update username in PostgreSQL and mark has_chosen_username as TRUE
       const updateResult = await pool.query(
         `UPDATE users
-         SET display_name = $1, updated_at = CURRENT_TIMESTAMP
+         SET display_name = $1, has_chosen_username = TRUE, updated_at = CURRENT_TIMESTAMP
          WHERE id = $2
-         RETURNING id, google_id, spotify_id, display_name, email, profile_image_url, auth_provider`,
+         RETURNING id, google_id, spotify_id, display_name, email, profile_image_url, auth_provider, has_chosen_username`,
         [cleanUsername, userId]
       );
 
       return res.status(200).json({
         success: true,
         message: 'Username updated successfully',
-        user: updateResult.rows[0],
+        user: {
+          ...updateResult.rows[0],
+          has_chosen_username: true,
+          needsUsername: false,
+        },
       });
     }
 
+    // In-memory fallback
+    if (inMemoryStore.usernameExists(cleanUsername, userId)) {
+      return res.status(409).json({
+        success: false,
+        error: `The username "${cleanUsername}" is already taken. Please choose another.`,
+      });
+    }
+
+    const updated = inMemoryStore.updateUsername(userId, cleanUsername);
+
     return res.status(200).json({
       success: true,
+      message: 'Username updated successfully',
       user: {
-        id: userId,
-        display_name: cleanUsername,
+        ...(updated || { id: userId, display_name: cleanUsername }),
+        has_chosen_username: true,
+        needsUsername: false,
       },
     });
   } catch (error) {

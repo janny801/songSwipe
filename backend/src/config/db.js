@@ -1,13 +1,22 @@
 const { Pool } = require('pg');
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 require('dotenv').config();
 
 const connectionString = process.env.DATABASE_URL;
 
+const isRemoteOrSsl =
+  connectionString &&
+  (connectionString.includes('neon.tech') ||
+   connectionString.includes('sslmode=require') ||
+   process.env.NODE_ENV === 'production' ||
+   (!connectionString.includes('localhost') && !connectionString.includes('127.0.0.1')));
+
 const poolConfig = connectionString
   ? {
       connectionString,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-      connectionTimeoutMillis: 2500,
+      ssl: isRemoteOrSsl ? { rejectUnauthorized: false } : false,
+      connectionTimeoutMillis: 5000,
     }
   : {
       user: process.env.PGUSER || process.env.POSTGRES_USER || 'postgres',
@@ -15,7 +24,7 @@ const poolConfig = connectionString
       database: process.env.PGDATABASE || process.env.POSTGRES_DB || 'songswipe',
       password: process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD || 'postgres',
       port: parseInt(process.env.PGPORT || '5432', 10),
-      connectionTimeoutMillis: 2500,
+      connectionTimeoutMillis: 5000,
     };
 
 const pool = new Pool(poolConfig);

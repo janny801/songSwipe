@@ -153,6 +153,12 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
         let isNewUser =
           parsed.queryParams?.isNewUser === 'true' ||
           parsed.queryParams?.isNewUser === true;
+        let needsUsername =
+          parsed.queryParams?.needsUsername === 'true' ||
+          parsed.queryParams?.needsUsername === true ||
+          isNewUser ||
+          parsed.queryParams?.hasChosenUsername === 'false' ||
+          parsed.queryParams?.hasChosenUsername === false;
 
         // Fallback parameter parsing if queryParams is incomplete
         if (result.url.includes('?')) {
@@ -163,8 +169,10 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
             if (!emailParam) emailParam = searchParams.get('email');
             if (!displayNameParam) displayNameParam = searchParams.get('displayName');
             if (!userId) userId = searchParams.get('userId');
-            if (searchParams.has('isNewUser')) {
-              isNewUser = searchParams.get('isNewUser') === 'true';
+            if (searchParams.has('needsUsername')) {
+              needsUsername = searchParams.get('needsUsername') === 'true';
+            } else if (searchParams.has('isNewUser')) {
+              needsUsername = searchParams.get('isNewUser') === 'true';
             }
           } catch (e) {}
         }
@@ -175,13 +183,15 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
             email: emailParam,
             display_name: displayNameParam,
             auth_provider: 'google',
+            has_chosen_username: !needsUsername,
+            needsUsername,
           };
 
           // Update active authentication session
           setSession(token, userObj);
 
-          if (isNewUser) {
-            // New Google signup -> Prompt to choose a unique handle
+          if (needsUsername) {
+            // New Google signup -> Mandatory prompt to choose a unique handle
             setGoogleUser(userObj);
             const initialHandle = (displayNameParam || emailParam?.split('@')[0] || 'user')
               .replace(/[^a-zA-Z0-9_]/g, '')
@@ -189,7 +199,7 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
             setChosenHandle(initialHandle);
             setMode('choose_username');
           } else {
-            // Existing account -> Sign in immediately without asking for a username
+            // Existing account with unique username set -> Sign in immediately
             onClose();
             if (onGoogleSuccess) {
               onGoogleSuccess(userObj, false);
@@ -249,19 +259,16 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
     }
   };
 
-  const handleSkipHandle = () => {
-    onClose();
-    if (onGoogleSuccess && googleUser) {
-      onGoogleSuccess(googleUser, false);
-    }
-  };
-
   const handleGuest = () => {
     continueAsGuest();
     onClose();
   };
 
   const handleCloseModal = () => {
+    if (isChooseUsername) {
+      setErrorMessage('A unique username is required to complete setting up your account.');
+      return;
+    }
     setMode('signin');
     setErrorMessage('');
     onClose();
@@ -288,9 +295,11 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
                   song<Text style={styles.brandAccent}>Swipe</Text>
                 </Text>
               </View>
-              <TouchableOpacity style={styles.closeBtn} onPress={handleCloseModal}>
-                <Ionicons name="close" size={22} color={COLORS.textPrimary} />
-              </TouchableOpacity>
+              {!isChooseUsername && (
+                <TouchableOpacity style={styles.closeBtn} onPress={handleCloseModal}>
+                  <Ionicons name="close" size={22} color={COLORS.textPrimary} />
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* ERROR BANNER */}
@@ -347,13 +356,12 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
                   )}
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.skipBtn}
-                  onPress={handleSkipHandle}
-                  disabled={isHandleSaving}
-                >
-                  <Text style={styles.skipBtnText}>I'll choose later</Text>
-                </TouchableOpacity>
+                <View style={styles.requiredNoticeRow}>
+                  <Ionicons name="shield-checkmark-outline" size={16} color={COLORS.primary} />
+                  <Text style={styles.requiredNoticeText}>
+                    A unique username is required to complete account setup.
+                  </Text>
+                </View>
               </View>
             ) : (
               /* STANDARD SIGN IN / CREATE ACCOUNT VIEW */
@@ -812,13 +820,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingHorizontal: 4,
   },
-  skipBtn: {
-    paddingVertical: 14,
+  requiredNoticeRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
   },
-  skipBtnText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
+  requiredNoticeText: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    fontWeight: '500',
   },
 });

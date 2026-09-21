@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255),
     profile_image_url TEXT,
     auth_provider VARCHAR(50) DEFAULT 'email',
+    has_chosen_username BOOLEAN DEFAULT FALSE,
     spotify_access_token TEXT,
     spotify_refresh_token TEXT,
     spotify_token_expires_at TIMESTAMP WITH TIME ZONE,
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(50) DEFAULT 'email';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS has_chosen_username BOOLEAN DEFAULT FALSE;
 
 -- Tracks table
 -- Caches Spotify track metadata, preview URLs, and album artwork
@@ -62,3 +64,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_display_name_lower_idx ON users (LOWER(d
 CREATE INDEX IF NOT EXISTS idx_users_spotify_id ON users(spotify_id);
 CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx ON users (LOWER(email));

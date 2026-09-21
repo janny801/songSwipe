@@ -75,7 +75,9 @@ export default function ChooseUsernameModal({ visible, onClose }) {
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onClose}
+      onRequestClose={() => {
+        setErrorMessage('A unique username is required to continue.');
+      }}
     >
       <SafeAreaView style={styles.container}>
         <KeyboardAvoidingView
@@ -139,10 +141,12 @@ export default function ChooseUsernameModal({ visible, onClose }) {
               )}
             </TouchableOpacity>
 
-            {/* Skip Option */}
-            <TouchableOpacity style={styles.skipBtn} onPress={onClose} disabled={isLoading}>
-              <Text style={styles.skipBtnText}>I'll choose later</Text>
-            </TouchableOpacity>
+            <View style={styles.requiredNoticeRow}>
+              <Ionicons name="shield-checkmark-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.requiredNoticeText}>
+                A unique username is required for all SongSwipe accounts.
+              </Text>
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -258,12 +262,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
-  skipBtn: {
+  requiredNoticeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     paddingVertical: 12,
   },
-  skipBtnText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
+  requiredNoticeText: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    fontWeight: '500',
   },
 });
