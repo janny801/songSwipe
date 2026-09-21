@@ -17,8 +17,8 @@ import { COLORS } from '../constants/theme';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-export default function ChooseUsernameModal({ visible, onClose }) {
-  const { user, updateUser } = useAuth();
+export default function ChooseUsernameModal({ visible, onClose, onSwitchAccount }) {
+  const { user, updateUser, logout } = useAuth();
 
   const [username, setUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -32,6 +32,21 @@ export default function ChooseUsernameModal({ visible, onClose }) {
       setErrorMessage('');
     }
   }, [visible, user]);
+
+  const handleCancel = () => {
+    // User cancelled username selection: log out of incomplete session
+    logout();
+    onClose && onClose();
+  };
+
+  const handleSwitch = () => {
+    // User wants to use a different account: log out and open sign-in modal
+    logout();
+    onClose && onClose();
+    if (onSwitchAccount) {
+      onSwitchAccount();
+    }
+  };
 
   const handleSave = async () => {
     setErrorMessage('');
@@ -75,9 +90,7 @@ export default function ChooseUsernameModal({ visible, onClose }) {
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={() => {
-        setErrorMessage('A unique username is required to continue.');
-      }}
+      onRequestClose={handleCancel}
     >
       <SafeAreaView style={styles.container}>
         <KeyboardAvoidingView
@@ -85,6 +98,19 @@ export default function ChooseUsernameModal({ visible, onClose }) {
           style={{ flex: 1 }}
         >
           <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+            {/* Header with dismiss button */}
+            <View style={styles.header}>
+              <View style={styles.brandRow}>
+                <Ionicons name="musical-notes" size={26} color={COLORS.primary} />
+                <Text style={styles.brandTitle}>
+                  song<Text style={styles.brandAccent}>Swipe</Text>
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.closeBtn} onPress={handleCancel}>
+                <Ionicons name="close" size={22} color={COLORS.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
             {/* Header badge */}
             <View style={styles.badgeRow}>
               <View style={styles.iconCircle}>
@@ -141,6 +167,15 @@ export default function ChooseUsernameModal({ visible, onClose }) {
               )}
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={styles.switchAccountBtn}
+              onPress={handleSwitch}
+              disabled={isLoading}
+            >
+              <Ionicons name="log-out-outline" size={16} color={COLORS.textSecondary} />
+              <Text style={styles.switchAccountText}>Use a different account / Sign out</Text>
+            </TouchableOpacity>
+
             <View style={styles.requiredNoticeRow}>
               <Ionicons name="shield-checkmark-outline" size={16} color={COLORS.primary} />
               <Text style={styles.requiredNoticeText}>
@@ -161,8 +196,37 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingVertical: 32,
+    paddingVertical: 20,
     alignItems: 'center',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 20,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  brandTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  brandAccent: {
+    color: COLORS.primary,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   badgeRow: {
     marginBottom: 20,
@@ -273,5 +337,18 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 12,
     fontWeight: '500',
+  },
+  switchAccountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    marginTop: 6,
+  },
+  switchAccountText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

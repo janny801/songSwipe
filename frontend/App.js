@@ -299,11 +299,15 @@ function MainApp() {
       {/* Mandatory Unique Username Prompt for First Login (Google or any account without chosen handle) */}
       <ChooseUsernameModal
         visible={Boolean(
+          !isAuthModalVisible &&
           isAuthenticated &&
           user &&
           (user.has_chosen_username === false || user.needsUsername === true || user.needs_username === true)
         )}
         onClose={() => {}}
+        onSwitchAccount={() => {
+          setIsAuthModalVisible(true);
+        }}
       />
 
       {/* User Account & Profile Modal (modify unique username & sign out) */}

@@ -22,7 +22,7 @@ import { api, getBackendUrl } from '../services/api';
 WebBrowser.maybeCompleteAuthSession();
 
 export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
-  const { login, register, setSession, updateUser, continueAsGuest } = useAuth();
+  const { login, register, setSession, updateUser, continueAsGuest, logout } = useAuth();
 
   // Mode: 'signin' | 'signup' | 'choose_username'
   const [mode, setMode] = useState('signin');
@@ -264,11 +264,21 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
     onClose();
   };
 
+  const handleSwitchAccount = () => {
+    logout();
+    setGoogleUser(null);
+    setChosenHandle('');
+    setErrorMessage('');
+    setMode('signin');
+  };
+
   const handleCloseModal = () => {
     if (isChooseUsername) {
-      setErrorMessage('A unique username is required to complete setting up your account.');
-      return;
+      // User cancelled username selection: clear provisional session so they can switch accounts
+      logout();
     }
+    setGoogleUser(null);
+    setChosenHandle('');
     setMode('signin');
     setErrorMessage('');
     onClose();
@@ -287,7 +297,7 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
           style={{ flex: 1 }}
         >
           <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-            {/* Header with dismiss */}
+            {/* Header with dismiss button */}
             <View style={styles.header}>
               <View style={styles.brandRow}>
                 <Ionicons name="musical-notes" size={26} color={COLORS.primary} />
@@ -295,11 +305,9 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
                   song<Text style={styles.brandAccent}>Swipe</Text>
                 </Text>
               </View>
-              {!isChooseUsername && (
-                <TouchableOpacity style={styles.closeBtn} onPress={handleCloseModal}>
-                  <Ionicons name="close" size={22} color={COLORS.textPrimary} />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity style={styles.closeBtn} onPress={handleCloseModal}>
+                <Ionicons name="close" size={22} color={COLORS.textPrimary} />
+              </TouchableOpacity>
             </View>
 
             {/* ERROR BANNER */}
@@ -354,6 +362,15 @@ export default function SignInModal({ visible, onClose, onGoogleSuccess }) {
                   ) : (
                     <Text style={styles.primaryBtnText}>Save Username & Continue</Text>
                   )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.switchAccountBtn}
+                  onPress={handleSwitchAccount}
+                  disabled={isHandleSaving}
+                >
+                  <Ionicons name="log-out-outline" size={16} color={COLORS.textSecondary} />
+                  <Text style={styles.switchAccountText}>Use a different account / Sign out</Text>
                 </TouchableOpacity>
 
                 <View style={styles.requiredNoticeRow}>
@@ -831,5 +848,18 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 12,
     fontWeight: '500',
+  },
+  switchAccountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    marginTop: 6,
+  },
+  switchAccountText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
