@@ -32,27 +32,43 @@ const CardDeck = React.forwardRef(function CardDeck(
   const position = useRef(new Animated.ValueXY()).current;
   const hapticFiredRef = useRef(false);
 
-  // Expose swipeLeft and swipeRight methods to parent via ref
-  React.useImperativeHandle(ref, () => ({
-    swipeLeft: () => forceSwipe('left'),
-    swipeRight: () => forceSwipe('right'),
-  }));
+  const currentIndexRef = useRef(currentIndex);
+  const tracksRef = useRef(tracks);
+  const onSwipeRightRef = useRef(onSwipeRight);
+  const onSwipeLeftRef = useRef(onSwipeLeft);
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
+  useEffect(() => {
+    tracksRef.current = tracks;
+  }, [tracks]);
+
+  useEffect(() => {
+    onSwipeRightRef.current = onSwipeRight;
+  }, [onSwipeRight]);
+
+  useEffect(() => {
+    onSwipeLeftRef.current = onSwipeLeft;
+  }, [onSwipeLeft]);
 
   const onSwipeComplete = useCallback(
     (direction) => {
-      const currentTrack = tracks[currentIndex];
+      const idx = currentIndexRef.current;
+      const currentTrack = tracksRef.current[idx];
       position.setValue({ x: 0, y: 0 });
       hapticFiredRef.current = false;
 
       if (direction === 'right') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        onSwipeRight && onSwipeRight(currentTrack);
+        onSwipeRightRef.current && onSwipeRightRef.current(currentTrack);
       } else {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-        onSwipeLeft && onSwipeLeft(currentTrack);
+        onSwipeLeftRef.current && onSwipeLeftRef.current(currentTrack);
       }
     },
-    [currentIndex, tracks, onSwipeLeft, onSwipeRight, position]
+    [position]
   );
 
   const forceSwipe = useCallback(
@@ -66,6 +82,17 @@ const CardDeck = React.forwardRef(function CardDeck(
     },
     [position, onSwipeComplete]
   );
+
+  const forceSwipeRef = useRef(forceSwipe);
+  useEffect(() => {
+    forceSwipeRef.current = forceSwipe;
+  }, [forceSwipe]);
+
+  // Expose swipeLeft and swipeRight methods to parent via ref
+  React.useImperativeHandle(ref, () => ({
+    swipeLeft: () => forceSwipe('left'),
+    swipeRight: () => forceSwipe('right'),
+  }));
 
   const panResponder = useRef(
     PanResponder.create({
@@ -83,9 +110,9 @@ const CardDeck = React.forwardRef(function CardDeck(
       },
       onPanResponderRelease: (_, gesture) => {
         if (gesture.dx > SWIPE_THRESHOLD || gesture.vx > 0.8) {
-          forceSwipe('right');
+          forceSwipeRef.current('right');
         } else if (gesture.dx < -SWIPE_THRESHOLD || gesture.vx < -0.8) {
-          forceSwipe('left');
+          forceSwipeRef.current('left');
         } else {
           // Spring back to center
           Animated.spring(position, {

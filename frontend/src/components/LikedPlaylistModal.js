@@ -21,6 +21,7 @@ import { COLORS } from '../constants/theme';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const ACTION_WIDTH = 80;
 const CARD_WIDTH = SCREEN_WIDTH - 28;
+const ROW_HEIGHT = 76;
 
 function SwipeableTrackRow({
   item,
@@ -87,7 +88,8 @@ function SwipeableTrackRow({
         contentOffset={{ x: ACTION_WIDTH, y: 0 }}
         onScrollEndDrag={handleScrollEndDrag}
         style={styles.horizontalScrollView}
-        contentContainerStyle={{ width: CARD_WIDTH + ACTION_WIDTH * 2 }}
+        contentContainerStyle={{ width: CARD_WIDTH + ACTION_WIDTH * 2, height: ROW_HEIGHT }}
+        nestedScrollEnabled={true}
       >
         {/* Left Action: Spotify Playlist (Revealed on Swipe Right) */}
         <TouchableOpacity
@@ -327,6 +329,7 @@ export default function LikedPlaylistModal({
               String(index)
             }
             renderItem={renderTrackItem}
+            style={styles.flatList}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -421,24 +424,29 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 12,
   },
+  flatList: {
+    flex: 1,
+  },
   listContent: {
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 40,
     paddingHorizontal: 14,
-    gap: 8,
   },
   rowContainer: {
+    height: ROW_HEIGHT,
     borderRadius: 14,
     overflow: 'hidden',
     marginVertical: 4,
     backgroundColor: COLORS.cardBackground,
   },
   horizontalScrollView: {
+    height: ROW_HEIGHT,
     borderRadius: 14,
     overflow: 'hidden',
   },
   scrollAction: {
     width: ACTION_WIDTH,
-    height: '100%',
+    height: ROW_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
@@ -464,10 +472,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   trackRow: {
+    height: ROW_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.cardBackground,
-    padding: 12,
+    paddingHorizontal: 12,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: COLORS.border,
