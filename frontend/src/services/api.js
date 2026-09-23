@@ -485,4 +485,21 @@ export const api = {
     }
     return data.playlist;
   },
+
+  /**
+   * Update Spotify auto-sync settings (e.g. auto-save liked songs to Spotify)
+   */
+  async updateSpotifySyncSettings(autoSaveSpotifyLikes) {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/users/spotify/sync-settings`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ autoSaveSpotifyLikes }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update Spotify sync setting');
+    }
+    return data;
+  },
 };

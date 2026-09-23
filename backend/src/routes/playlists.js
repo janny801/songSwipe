@@ -231,12 +231,48 @@ router.post('/swipe', optionalAuth, async (req, res) => {
       [userId, savedTrack.id, playlistName]
     );
 
+    // Fetch user Spotify details & preference
+    const userPrefResult = await client.query(
+      `SELECT spotify_id, auto_save_spotify_likes FROM users WHERE id = $1`,
+      [userId]
+    );
+    const userRow = userPrefResult.rows[0];
+
     await client.query('COMMIT');
+
+    // 4. Auto-save to Spotify Liked Songs if connected & enabled
+    let spotifySaved = false;
+    const isAutoSaveEnabled = userRow?.auto_save_spotify_likes !== false;
+
+    if (userRow?.spotify_id && isAutoSaveEnabled) {
+      try {
+        const spotifyAuth = await getValidSpotifyAccessToken(userId);
+        if (spotifyAuth?.accessToken) {
+          const rawTrackId = savedTrack.spotify_track_id || track.spotify_track_id || track.id;
+          const cleanTrackId = String(rawTrackId).replace(/^spotify:track:/, '');
+          const trackUri = `spotify:track:${cleanTrackId}`;
+
+          await axios.put(
+            `https://api.spotify.com/v1/me/library?uris=${encodeURIComponent(trackUri)}`,
+            {},
+            {
+              headers: {
+                Authorization: `Bearer ${spotifyAuth.accessToken}`,
+              },
+            }
+          );
+          spotifySaved = true;
+        }
+      } catch (spErr) {
+        console.warn('Auto-save to Spotify Liked Songs notice:', spErr.response?.data?.error?.message || spErr.message);
+      }
+    }
 
     return res.status(201).json({
       success: true,
       action: 'liked',
       storage: 'postgresql',
+      spotifySaved,
       message: `Saved "${savedTrack.name}" by ${savedTrack.artist} to "${playlistName}"!`,
       data: {
         playlist_id: playlistResult.rows[0].id,

@@ -612,4 +612,64 @@ router.put('/genres', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * PUT /api/users/spotify/sync-settings
+ * Update Spotify auto-sync settings (e.g., auto-saving right-swiped tracks to Spotify Liked Songs)
+ */
+router.put('/spotify/sync-settings', requireAuth, async (req, res) => {
+  const userId = req.user.userId;
+  const { autoSaveSpotifyLikes } = req.body;
+
+  if (typeof autoSaveSpotifyLikes !== 'boolean') {
+    return res.status(400).json({
+      success: false,
+      error: 'autoSaveSpotifyLikes must be a boolean (true or false)',
+    });
+  }
+
+  try {
+    if (getIsConnected()) {
+      const result = await pool.query(
+        `UPDATE users
+         SET auto_save_spotify_likes = $1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2
+         RETURNING id, display_name, email, spotify_id, spotify_display_name, auto_save_spotify_likes`,
+        [autoSaveSpotifyLikes, userId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'User not found' });
+      }
+
+      return res.status(200).json({
+        success: true,
+        autoSaveSpotifyLikes,
+        user: result.rows[0],
+        message: autoSaveSpotifyLikes
+          ? 'Swiped songs will now automatically be added to your Spotify Liked Songs.'
+          : 'Auto-saving swiped songs to Spotify has been disabled.',
+      });
+    }
+
+    // In-memory fallback
+    const memUser = inMemoryStore.findUserById(userId);
+    if (memUser) {
+      memUser.auto_save_spotify_likes = autoSaveSpotifyLikes;
+    }
+    return res.status(200).json({
+      success: true,
+      autoSaveSpotifyLikes,
+      message: 'Setting updated successfully.',
+    });
+  } catch (error) {
+    console.error('Error updating Spotify sync settings:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to update Spotify sync settings',
+      details: error.message,
+    });
+  }
+});
+
 module.exports = router;

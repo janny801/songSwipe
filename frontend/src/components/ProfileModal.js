@@ -12,9 +12,11 @@ import {
   ScrollView,
   Alert,
   Image,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { COLORS } from '../constants/theme';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -55,6 +57,10 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
   const [isDisconnectingSpotify, setIsDisconnectingSpotify] = useState(false);
   const [spotifySuccessMessage, setSpotifySuccessMessage] = useState('');
   const [spotifyErrorMessage, setSpotifyErrorMessage] = useState('');
+  const [autoSaveSpotifyLikes, setAutoSaveSpotifyLikes] = useState(
+    user?.auto_save_spotify_likes !== false
+  );
+  const [isUpdatingSyncSetting, setIsUpdatingSyncSetting] = useState(false);
 
   // Custom Playlists state
   const [playlists, setPlaylists] = useState([]);
@@ -90,6 +96,7 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
     if (visible && user) {
       setUsername(user.display_name || user.email?.split('@')[0] || '');
       setSelectedGenres(Array.isArray(user.favorite_genres) ? user.favorite_genres : []);
+      setAutoSaveSpotifyLikes(user.auto_save_spotify_likes !== false);
       setErrorMessage('');
       setSuccessMessage('');
       setGenreSuccessMessage('');
@@ -103,6 +110,29 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
       loadPlaylists();
     }
   }, [visible, user, loadPlaylists]);
+
+  const handleToggleAutoSave = async (newValue) => {
+    setAutoSaveSpotifyLikes(newValue);
+    Haptics.selectionAsync().catch(() => {});
+    setIsUpdatingSyncSetting(true);
+    setSpotifyErrorMessage('');
+    try {
+      const res = await api.updateSpotifySyncSettings(newValue);
+      if (res.success) {
+        updateUser({ auto_save_spotify_likes: newValue });
+        setSpotifySuccessMessage(
+          newValue
+            ? 'Swiped songs will now auto-save to your Spotify Liked Songs!'
+            : 'Auto-save to Spotify Liked Songs disabled.'
+        );
+      }
+    } catch (err) {
+      setAutoSaveSpotifyLikes(!newValue);
+      setSpotifyErrorMessage(err.message || 'Could not update auto-save setting.');
+    } finally {
+      setIsUpdatingSyncSetting(false);
+    }
+  };
 
   const toggleGenre = (genreId) => {
     setGenreSuccessMessage('');
@@ -623,23 +653,56 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
                       )}
                     </TouchableOpacity>
                   </View>
+
+                  {/* Auto-save to Spotify Liked Songs Setting */}
+                  <View style={styles.spotifySettingDivider} />
+                  <View style={styles.spotifySettingRow}>
+                    <View style={styles.spotifySettingLeft}>
+                      <View style={styles.spotifySettingIconBox}>
+                        <Ionicons name="heart" size={18} color="#1DB954" />
+                      </View>
+                      <View style={styles.spotifySettingTextBox}>
+                        <Text style={styles.spotifySettingTitle}>Auto-save Liked Songs</Text>
+                        <Text style={styles.spotifySettingSubtitle}>
+                          Automatically add songs you swipe right on to your Spotify Liked Songs
+                        </Text>
+                      </View>
+                    </View>
+                    <Switch
+                      value={autoSaveSpotifyLikes}
+                      onValueChange={handleToggleAutoSave}
+                      trackColor={{ false: '#3E3E3E', true: 'rgba(29, 185, 84, 0.45)' }}
+                      thumbColor={autoSaveSpotifyLikes ? '#1DB954' : '#B0B0B0'}
+                      ios_backgroundColor="#3E3E3E"
+                      disabled={isUpdatingSyncSetting}
+                    />
+                  </View>
                 </View>
               ) : (
-                <TouchableOpacity
-                  style={[styles.connectSpotifyBtn, isConnectingSpotify && { opacity: 0.7 }]}
-                  onPress={handleConnectSpotify}
-                  disabled={isConnectingSpotify}
-                  activeOpacity={0.85}
-                >
-                  {isConnectingSpotify ? (
-                    <ActivityIndicator color="#000" />
-                  ) : (
-                    <View style={styles.saveBtnRow}>
-                      <FontAwesome name="spotify" size={20} color="#000" />
-                      <Text style={styles.connectSpotifyBtnText}>Connect Spotify Account</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    style={[styles.connectSpotifyBtn, isConnectingSpotify && { opacity: 0.7 }]}
+                    onPress={handleConnectSpotify}
+                    disabled={isConnectingSpotify}
+                    activeOpacity={0.85}
+                  >
+                    {isConnectingSpotify ? (
+                      <ActivityIndicator color="#000" />
+                    ) : (
+                      <View style={styles.saveBtnRow}>
+                        <FontAwesome name="spotify" size={20} color="#000" />
+                        <Text style={styles.connectSpotifyBtnText}>Connect Spotify Account</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+
+                  <View style={styles.spotifyFeatureHintBox}>
+                    <Ionicons name="sparkles" size={15} color={COLORS.primary} />
+                    <Text style={styles.spotifyFeatureHintText}>
+                      Connect your Spotify account to automatically add songs you swipe right on into your Spotify Liked Songs!
+                    </Text>
+                  </View>
+                </>
               )}
             </View>
 
@@ -1215,6 +1278,65 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 15,
     fontWeight: '800',
+  },
+  spotifySettingDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    marginTop: 16,
+    marginBottom: 14,
+  },
+  spotifySettingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  spotifySettingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 12,
+  },
+  spotifySettingIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(29, 185, 84, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  spotifySettingTextBox: {
+    flex: 1,
+  },
+  spotifySettingTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  spotifySettingSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  spotifyFeatureHintBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(29, 185, 84, 0.08)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(29, 185, 84, 0.18)',
+  },
+  spotifyFeatureHintText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 16,
   },
   playlistsSection: {
     backgroundColor: COLORS.cardBackground,
