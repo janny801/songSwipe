@@ -30,6 +30,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(50) DEFAULT 'em
 ALTER TABLE users ADD COLUMN IF NOT EXISTS has_chosen_username BOOLEAN DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS favorite_genres TEXT[] DEFAULT '{}';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS spotify_display_name VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS spotify_profile_image_url TEXT;
 
 -- Tracks table
 -- Caches Spotify track metadata, preview URLs, and album artwork

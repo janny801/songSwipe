@@ -121,6 +121,7 @@ function updateSpotify(userId, spotifyData) {
   if (!user) return null;
   user.spotify_id = spotifyData.spotify_id;
   user.spotify_display_name = spotifyData.spotify_display_name;
+  user.spotify_profile_image_url = spotifyData.spotify_profile_image_url;
   user.spotify_access_token = spotifyData.spotify_access_token;
   user.spotify_refresh_token = spotifyData.spotify_refresh_token;
   user.spotify_token_expires_at = spotifyData.spotify_token_expires_at;
@@ -133,6 +134,7 @@ function disconnectSpotify(userId) {
   if (!user) return null;
   user.spotify_id = null;
   user.spotify_display_name = null;
+  user.spotify_profile_image_url = null;
   user.spotify_access_token = null;
   user.spotify_refresh_token = null;
   user.spotify_token_expires_at = null;

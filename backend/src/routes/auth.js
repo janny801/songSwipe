@@ -932,7 +932,7 @@ router.get('/me', requireAuth, async (req, res) => {
   try {
     if (getIsConnected()) {
       const result = await pool.query(
-        `SELECT id, google_id, spotify_id, spotify_display_name, display_name, email, profile_image_url, auth_provider, has_chosen_username, favorite_genres, created_at
+        `SELECT id, google_id, spotify_id, spotify_display_name, spotify_profile_image_url, display_name, email, profile_image_url, auth_provider, has_chosen_username, favorite_genres, created_at
          FROM users
          WHERE id = $1`,
         [req.user.userId]

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Alert, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 
@@ -12,6 +12,7 @@ export default function AppHeader({
   onOpenProfile,
 }) {
   const isUserLoggedIn = Boolean(user && user.auth_provider !== 'guest');
+  const avatarUrl = user?.spotify_profile_image_url || user?.profile_image_url;
 
   const handleProfilePress = () => {
     if (isUserLoggedIn) {
@@ -50,7 +51,9 @@ export default function AppHeader({
         >
           {isUserLoggedIn ? (
             <>
-              {user.auth_provider === 'google' ? (
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={styles.headerAvatar} />
+              ) : user.auth_provider === 'google' ? (
                 <Ionicons name="logo-google" size={14} color="#EA4335" />
               ) : (
                 <Ionicons name="person-circle" size={16} color={COLORS.primary} />
@@ -150,5 +153,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     maxWidth: 60,
+  },
+  headerAvatar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
   },
 });

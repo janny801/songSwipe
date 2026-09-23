@@ -222,30 +222,32 @@ router.get('/spotify/callback', async (req, res) => {
          SET
            spotify_id = $1,
            spotify_display_name = $2,
-           spotify_access_token = $3,
-           spotify_refresh_token = $4,
-           spotify_token_expires_at = $5,
-           profile_image_url = COALESCE(profile_image_url, $6),
+           spotify_profile_image_url = $3,
+           spotify_access_token = $4,
+           spotify_refresh_token = $5,
+           spotify_token_expires_at = $6,
+           profile_image_url = COALESCE($3, profile_image_url),
            updated_at = CURRENT_TIMESTAMP
          WHERE id = $7`,
         [
           spotifyProfile.id,
           spotifyDisplayName,
+          spotifyAvatarUrl,
           access_token,
           refresh_token,
           expiresAt,
-          spotifyAvatarUrl,
           targetUserId,
         ]
       );
     } else if (getIsConnected()) {
       await pool.query(
-        `INSERT INTO users (spotify_id, spotify_display_name, display_name, email, profile_image_url, spotify_access_token, spotify_refresh_token, spotify_token_expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO users (spotify_id, spotify_display_name, spotify_profile_image_url, display_name, email, profile_image_url, spotify_access_token, spotify_refresh_token, spotify_token_expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (spotify_id)
          DO UPDATE SET
            spotify_display_name = EXCLUDED.spotify_display_name,
-           profile_image_url = COALESCE(users.profile_image_url, EXCLUDED.profile_image_url),
+           spotify_profile_image_url = EXCLUDED.spotify_profile_image_url,
+           profile_image_url = COALESCE(EXCLUDED.spotify_profile_image_url, users.profile_image_url),
            spotify_access_token = EXCLUDED.spotify_access_token,
            spotify_refresh_token = EXCLUDED.spotify_refresh_token,
            spotify_token_expires_at = EXCLUDED.spotify_token_expires_at,
@@ -253,6 +255,7 @@ router.get('/spotify/callback', async (req, res) => {
         [
           spotifyProfile.id,
           spotifyDisplayName,
+          spotifyAvatarUrl,
           spotifyDisplayName,
           spotifyProfile.email,
           spotifyAvatarUrl,
@@ -265,6 +268,7 @@ router.get('/spotify/callback', async (req, res) => {
       inMemoryStore.updateSpotify(targetUserId, {
         spotify_id: spotifyProfile.id,
         spotify_display_name: spotifyDisplayName,
+        spotify_profile_image_url: spotifyAvatarUrl,
         spotify_access_token: access_token,
         spotify_refresh_token: refresh_token,
         spotify_token_expires_at: expiresAt,
@@ -409,12 +413,13 @@ router.post('/spotify/disconnect', requireAuth, async (req, res) => {
          SET
            spotify_id = NULL,
            spotify_display_name = NULL,
+           spotify_profile_image_url = NULL,
            spotify_access_token = NULL,
            spotify_refresh_token = NULL,
            spotify_token_expires_at = NULL,
            updated_at = CURRENT_TIMESTAMP
          WHERE id = $1
-         RETURNING id, google_id, spotify_id, spotify_display_name, display_name, email, profile_image_url, auth_provider, has_chosen_username`,
+         RETURNING id, google_id, spotify_id, spotify_display_name, spotify_profile_image_url, display_name, email, profile_image_url, auth_provider, has_chosen_username`,
         [userId]
       );
 

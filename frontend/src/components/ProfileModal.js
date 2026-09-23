@@ -11,6 +11,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
@@ -230,6 +231,7 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
 
   const isGoogle = user.auth_provider === 'google';
   const initial = (user.display_name || user.email || 'U').charAt(0).toUpperCase();
+  const avatarUrl = user.spotify_profile_image_url || user.profile_image_url;
 
   return (
     <Modal
@@ -255,14 +257,28 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
             {/* Profile Avatar Card */}
             <View style={styles.avatarSection}>
               <View style={styles.avatarWrapper}>
-                <View style={[styles.avatarCircle, isGoogle && styles.avatarCircleGoogle]}>
-                  <Text style={styles.avatarInitial}>{initial}</Text>
+                <View
+                  style={[
+                    styles.avatarCircle,
+                    isGoogle && styles.avatarCircleGoogle,
+                    user.spotify_id && styles.avatarCircleSpotify,
+                  ]}
+                >
+                  {avatarUrl ? (
+                    <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+                  ) : (
+                    <Text style={styles.avatarInitial}>{initial}</Text>
+                  )}
                 </View>
-                {isGoogle && (
+                {user.spotify_id ? (
+                  <View style={styles.spotifyProviderBadge}>
+                    <FontAwesome name="spotify" size={13} color="#000" />
+                  </View>
+                ) : isGoogle ? (
                   <View style={styles.providerBadge}>
                     <Ionicons name="logo-google" size={14} color="#FFF" />
                   </View>
-                )}
+                ) : null}
               </View>
 
               <Text style={styles.profileName}>@{user.display_name || 'username'}</Text>
@@ -461,9 +477,21 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
               {user.spotify_id ? (
                 <View style={styles.spotifyLinkedCard}>
                   <View style={styles.spotifyInfoRow}>
-                    <View style={styles.spotifyIconCircle}>
-                      <FontAwesome name="spotify" size={24} color={COLORS.primary} />
-                    </View>
+                    {user.spotify_profile_image_url ? (
+                      <View style={styles.spotifyAvatarWrapper}>
+                        <Image
+                          source={{ uri: user.spotify_profile_image_url }}
+                          style={styles.spotifyAvatarImg}
+                        />
+                        <View style={styles.spotifyAvatarBadge}>
+                          <FontAwesome name="spotify" size={10} color="#000" />
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.spotifyIconCircle}>
+                        <FontAwesome name="spotify" size={24} color={COLORS.primary} />
+                      </View>
+                    )}
                     <View style={styles.spotifyTextInfo}>
                       <View style={styles.spotifyPillRow}>
                         <View style={styles.spotifyActiveDot} />
@@ -577,6 +605,14 @@ const styles = StyleSheet.create({
   avatarCircleGoogle: {
     borderColor: '#EA4335',
   },
+  avatarCircleSpotify: {
+    borderColor: COLORS.primary,
+  },
+  avatarImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+  },
   avatarInitial: {
     color: COLORS.textPrimary,
     fontSize: 32,
@@ -590,6 +626,19 @@ const styles = StyleSheet.create({
     height: 26,
     borderRadius: 13,
     backgroundColor: '#EA4335',
+    borderWidth: 2,
+    borderColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spotifyProviderBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: COLORS.primary,
     borderWidth: 2,
     borderColor: COLORS.background,
     alignItems: 'center',
@@ -836,6 +885,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     marginBottom: 12,
+  },
+  spotifyAvatarWrapper: {
+    position: 'relative',
+    width: 48,
+    height: 48,
+  },
+  spotifyAvatarImg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+  },
+  spotifyAvatarBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: COLORS.primary,
+    borderWidth: 1.5,
+    borderColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   spotifyIconCircle: {
     width: 44,
