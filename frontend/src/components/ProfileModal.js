@@ -70,6 +70,8 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
   const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
   const [playlistSuccessMessage, setPlaylistSuccessMessage] = useState('');
   const [playlistErrorMessage, setPlaylistErrorMessage] = useState('');
+  const [playlistToDelete, setPlaylistToDelete] = useState(null);
+  const [isDeletingPlaylist, setIsDeletingPlaylist] = useState(false);
 
   const loadPlaylists = useCallback(async () => {
     if (!user) return;
@@ -107,6 +109,8 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
       setPlaylistErrorMessage('');
       setShowCreatePlaylist(false);
       setNewPlaylistName('');
+      setPlaylistToDelete(null);
+      setIsDeletingPlaylist(false);
       loadPlaylists();
     }
   }, [visible, user, loadPlaylists]);
@@ -324,54 +328,54 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
   const handleDeletePlaylist = (item) => {
     setPlaylistErrorMessage('');
     setPlaylistSuccessMessage('');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setPlaylistToDelete(item);
+  };
+
+  const confirmDeletePlaylist = async () => {
+    if (!playlistToDelete) return;
+    const item = playlistToDelete;
+    setIsDeletingPlaylist(true);
+    setPlaylistErrorMessage('');
+    setPlaylistSuccessMessage('');
 
     const isSpotifyPlaylist = Boolean(user?.spotify_id && item.id);
 
-    Alert.alert(
-      'Delete Playlist',
-      isSpotifyPlaylist
-        ? `Are you sure you want to delete "${item.name}" from your Spotify account?`
-        : `Are you sure you want to delete "${item.name}"? Any tracks added to this playlist will be removed.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              if (isSpotifyPlaylist) {
-                await api.deleteSpotifyPlaylist(item.id, user?.id);
-                setPlaylists((prev) =>
-                  prev.filter((p) => p.id !== item.id && p.name !== item.name)
-                );
-                setPlaylistSuccessMessage(`Spotify Playlist "${item.name}" deleted.`);
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-              } else {
-                await api.deleteCustomPlaylist(item.name, user?.id);
-                setPlaylists((prev) =>
-                  prev.filter((p) => (item.id ? p.id !== item.id : p.name !== item.name))
-                );
-                setPlaylistSuccessMessage(`Playlist "${item.name}" deleted.`);
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-              }
-            } catch (err) {
-              // If Spotify delete failed, try custom playlist delete fallback
-              if (isSpotifyPlaylist) {
-                try {
-                  await api.deleteCustomPlaylist(item.name, user?.id);
-                  setPlaylists((prev) =>
-                    prev.filter((p) => p.id !== item.id && p.name !== item.name)
-                  );
-                  setPlaylistSuccessMessage(`Playlist "${item.name}" deleted.`);
-                  return;
-                } catch (_) {}
-              }
-              setPlaylistErrorMessage(err.message || 'Failed to delete playlist.');
-            }
-          },
-        },
-      ]
-    );
+    try {
+      if (isSpotifyPlaylist) {
+        await api.deleteSpotifyPlaylist(item.id, user?.id);
+        setPlaylists((prev) =>
+          prev.filter((p) => p.id !== item.id && p.name !== item.name)
+        );
+        setPlaylistSuccessMessage(`Spotify Playlist "${item.name}" deleted.`);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      } else {
+        await api.deleteCustomPlaylist(item.name, user?.id);
+        setPlaylists((prev) =>
+          prev.filter((p) => (item.id ? p.id !== item.id : p.name !== item.name))
+        );
+        setPlaylistSuccessMessage(`Playlist "${item.name}" deleted.`);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      }
+      setPlaylistToDelete(null);
+    } catch (err) {
+      // If Spotify delete failed, try custom playlist delete fallback
+      if (isSpotifyPlaylist) {
+        try {
+          await api.deleteCustomPlaylist(item.name, user?.id);
+          setPlaylists((prev) =>
+            prev.filter((p) => p.id !== item.id && p.name !== item.name)
+          );
+          setPlaylistSuccessMessage(`Playlist "${item.name}" deleted.`);
+          setPlaylistToDelete(null);
+          return;
+        } catch (_) {}
+      }
+      setPlaylistErrorMessage(err.message || 'Failed to delete playlist.');
+      setPlaylistToDelete(null);
+    } finally {
+      setIsDeletingPlaylist(false);
+    }
   };
 
   if (!user) return null;
@@ -861,6 +865,47 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
+
+        {/* Playlist Deletion Confirmation Dialog */}
+        {playlistToDelete && (
+          <View style={styles.confirmOverlay}>
+            <View style={styles.confirmDialog}>
+              <View style={styles.confirmIconContainer}>
+                <Ionicons name="trash-outline" size={28} color={COLORS.nopeRed} />
+              </View>
+              <Text style={styles.confirmTitle}>Delete Playlist?</Text>
+              <Text style={styles.confirmMessage}>
+                Are you sure you really want to delete{' '}
+                <Text style={styles.confirmHighlight}>"{playlistToDelete.name}"</Text>?
+                {user?.spotify_id && playlistToDelete.id
+                  ? '\n\nThis will remove the playlist from your Spotify account. This action cannot be undone.'
+                  : '\n\nAll saved songs in this playlist will be removed. This action cannot be undone.'}
+              </Text>
+              <View style={styles.confirmActions}>
+                <TouchableOpacity
+                  style={styles.confirmCancelBtn}
+                  onPress={() => setPlaylistToDelete(null)}
+                  disabled={isDeletingPlaylist}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.confirmCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.confirmDeleteBtn, isDeletingPlaylist && { opacity: 0.7 }]}
+                  onPress={confirmDeletePlaylist}
+                  disabled={isDeletingPlaylist}
+                  activeOpacity={0.8}
+                >
+                  {isDeletingPlaylist ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.confirmDeleteText}>Delete</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
       </SafeAreaView>
     </Modal>
   );
@@ -1501,5 +1546,87 @@ const styles = StyleSheet.create({
   },
   deletePlaylistBtn: {
     padding: 6,
+  },
+  confirmOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    zIndex: 99999,
+    elevation: 20,
+  },
+  confirmDialog: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 380,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(235, 87, 87, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  confirmIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(235, 87, 87, 0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  confirmTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  confirmMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#B0B0B0',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  confirmHighlight: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmCancelText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  confirmDeleteBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: COLORS.nopeRed,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmDeleteText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
