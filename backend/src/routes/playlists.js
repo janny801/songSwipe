@@ -952,7 +952,7 @@ router.post('/spotify/create', requireAuth, async (req, res) => {
     }
 
     const response = await axios.post(
-      `https://api.spotify.com/v1/users/${spotifyAuth.spotifyId}/playlists`,
+      'https://api.spotify.com/v1/me/playlists',
       {
         name: name.trim(),
         description: 'Created with SongSwipe',
@@ -974,17 +974,19 @@ router.post('/spotify/create', requireAuth, async (req, res) => {
         name: pl.name,
         description: pl.description || '',
         track_count: 0,
-        image_url: null,
+        image_url: pl.images?.[0]?.url || null,
         owner_id: pl.owner?.id,
         owner_name: pl.owner?.display_name || pl.owner?.id,
         is_public: pl.public,
       },
     });
   } catch (error) {
-    console.error('Error creating Spotify playlist:', error.response?.data || error.message);
-    return res.status(500).json({
+    const status = error.response?.status;
+    const errorData = error.response?.data?.error;
+    console.error('Error creating Spotify playlist:', status, errorData || error.message);
+    return res.status(status || 500).json({
       success: false,
-      error: error.response?.data?.error?.message || 'Failed to create playlist on Spotify',
+      error: errorData?.message || error.message || 'Failed to create playlist on Spotify',
     });
   }
 });
