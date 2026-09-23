@@ -22,6 +22,7 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
+import SwipeableToast from './SwipeableToast';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -72,6 +73,12 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
   const [playlistErrorMessage, setPlaylistErrorMessage] = useState('');
   const [playlistToDelete, setPlaylistToDelete] = useState(null);
   const [isDeletingPlaylist, setIsDeletingPlaylist] = useState(false);
+
+  // Toast notification state with swipe-up to dismiss
+  const [toastMessage, setToastMessage] = useState(null);
+  const showToast = useCallback((msg) => {
+    setToastMessage({ ...msg, id: Date.now() });
+  }, []);
 
   const loadPlaylists = useCallback(async () => {
     if (!user) return;
@@ -317,12 +324,20 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
         setShowCreatePlaylist(false);
         setPlaylists((prev) => [res, ...prev]);
         setPlaylistSuccessMessage(`Spotify Playlist "${res.name}" created!`);
+        showToast({
+          title: 'Playlist Created',
+          subtitle: `"${res.name}" • Spotify`,
+        });
       } else {
         const res = await api.createCustomPlaylist(clean, user?.id);
         setNewPlaylistName('');
         setShowCreatePlaylist(false);
         setPlaylists((prev) => [res, ...prev]);
         setPlaylistSuccessMessage(`Playlist "${res.name}" created!`);
+        showToast({
+          title: 'Playlist Created',
+          subtitle: `"${res.name}" • songSwipe`,
+        });
       }
     } catch (err) {
       setPlaylistErrorMessage(err.message || 'Failed to create playlist.');
@@ -354,6 +369,10 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
           prev.filter((p) => p.id !== item.id && p.name !== item.name)
         );
         setPlaylistSuccessMessage(`Spotify Playlist "${item.name}" deleted.`);
+        showToast({
+          title: 'Playlist Deleted',
+          subtitle: `"${item.name}" removed`,
+        });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       } else {
         await api.deleteCustomPlaylist(item.name, user?.id);
@@ -361,6 +380,10 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
           prev.filter((p) => (item.id ? p.id !== item.id : p.name !== item.name))
         );
         setPlaylistSuccessMessage(`Playlist "${item.name}" deleted.`);
+        showToast({
+          title: 'Playlist Deleted',
+          subtitle: `"${item.name}" removed`,
+        });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       }
       setPlaylistToDelete(null);
@@ -912,6 +935,13 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
             </View>
           </View>
         )}
+
+        {/* Toast Notification Banner with Swipe-Up to Dismiss */}
+        <SwipeableToast
+          toastMessage={toastMessage}
+          onDismiss={() => setToastMessage(null)}
+          topOffset={Platform.OS === 'ios' ? 14 : 10}
+        />
       </SafeAreaView>
     </Modal>
   );

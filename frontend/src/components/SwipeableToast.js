@@ -75,14 +75,10 @@ export default function SwipeableToast({
   // PanResponder to handle swipe up to dismiss
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        // Only capture vertical gestures with meaningful upward movement
-        return (
-          Math.abs(gestureState.dy) > 4 &&
-          Math.abs(gestureState.dy) > Math.abs(gestureState.dx)
-        );
-      },
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => false,
       onPanResponderGrant: () => {
         clearTimer();
       },
@@ -96,10 +92,10 @@ export default function SwipeableToast({
         }
       },
       onPanResponderRelease: (_, gestureState) => {
-        // If swiped up beyond 18px or flicked upward with velocity
+        // If swiped up beyond 12px or flicked upward with velocity
         if (
-          gestureState.dy < -18 ||
-          (gestureState.dy < -5 && gestureState.vy < -0.25)
+          gestureState.dy < -12 ||
+          gestureState.vy < -0.15
         ) {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
           dismissToastRef.current && dismissToastRef.current(gestureState.vy);
@@ -212,8 +208,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    zIndex: 99999,
-    elevation: 20,
+    zIndex: 999999,
+    elevation: 30,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.5,

@@ -276,13 +276,6 @@ export default function LikedPlaylistModal({
       onRequestClose={handleClose}
     >
       <SafeAreaView style={styles.container}>
-        {/* Toast Notification Banner with Swipe-Up to Dismiss */}
-        <SwipeableToast
-          toastMessage={toastMessage}
-          onDismiss={() => setToastMessage(null)}
-          topOffset={Platform.OS === 'ios' ? 14 : 10}
-        />
-
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.titleRow}>
@@ -383,6 +376,13 @@ export default function LikedPlaylistModal({
               subtitle: `${trackName} • Spotify`,
             });
           }}
+        />
+
+        {/* Toast Notification Banner with Swipe-Up to Dismiss (Must be last child to render on top of AddToPlaylistModal) */}
+        <SwipeableToast
+          toastMessage={toastMessage}
+          onDismiss={() => setToastMessage(null)}
+          topOffset={Platform.OS === 'ios' ? 14 : 10}
         />
       </SafeAreaView>
     </Modal>

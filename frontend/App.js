@@ -274,12 +274,6 @@ function MainApp() {
         onOpenProfile={() => setIsProfileVisible(true)}
       />
 
-      {/* Toast Notification Banner with Swipe-Up to Dismiss */}
-      <SwipeableToast
-        toastMessage={toastMessage}
-        onDismiss={() => setToastMessage(null)}
-      />
-
       {/* Main Swipeable Card Deck */}
       <View style={styles.contentArea}>
         {isLoadingTracks ? (
@@ -414,6 +408,12 @@ function MainApp() {
           loadTracks();
           loadLikedPlaylist();
         }}
+      />
+
+      {/* Toast Notification Banner with Swipe-Up to Dismiss (Must be last child to render over all views) */}
+      <SwipeableToast
+        toastMessage={toastMessage}
+        onDismiss={() => setToastMessage(null)}
       />
     </SafeAreaView>
   );

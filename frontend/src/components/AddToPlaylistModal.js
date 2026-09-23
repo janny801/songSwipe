@@ -19,6 +19,7 @@ import * as Linking from 'expo-linking';
 import { COLORS } from '../constants/theme';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import SwipeableToast from './SwipeableToast';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -45,6 +46,12 @@ export default function AddToPlaylistModal({
   const [showCreateInput, setShowCreateInput] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+
+  // Toast notification state with swipe-up to dismiss
+  const [toastMessage, setToastMessage] = useState(null);
+  const showToast = useCallback((msg) => {
+    setToastMessage({ ...msg, id: Date.now() });
+  }, []);
 
   // Animation controllers for smooth bottom sheet appearance without native Modal collision
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -201,6 +208,10 @@ export default function AddToPlaylistModal({
       setPlaylists((prev) => [created, ...prev]);
       setSelectedPlaylists((prev) => new Set(prev).add(created.id));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      showToast({
+        title: 'Playlist Created',
+        subtitle: `"${created.name}" • Spotify`,
+      });
     } catch (err) {
       setErrorMsg(err.message || 'Failed to create playlist on Spotify');
     } finally {
@@ -534,6 +545,13 @@ export default function AddToPlaylistModal({
           </>
         )}
       </Animated.View>
+
+      {/* Toast Notification Banner with Swipe-Up to Dismiss */}
+      <SwipeableToast
+        toastMessage={toastMessage}
+        onDismiss={() => setToastMessage(null)}
+        topOffset={Platform.OS === 'ios' ? 52 : 36}
+      />
     </View>
   );
 }
