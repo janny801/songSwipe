@@ -13,10 +13,14 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+
+WebBrowser.maybeCompleteAuthSession();
 
 const AVAILABLE_GENRES = [
   { id: 'pop', label: 'Pop', icon: 'musical-note' },
@@ -32,7 +36,7 @@ const AVAILABLE_GENRES = [
 ];
 
 export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
-  const { user, updateUser, logout } = useAuth();
+  const { user, updateUser, logout, refreshUser } = useAuth();
 
   const [username, setUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -45,6 +49,12 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
   const [genreSuccessMessage, setGenreSuccessMessage] = useState('');
   const [genreErrorMessage, setGenreErrorMessage] = useState('');
 
+  // Spotify linking state
+  const [isConnectingSpotify, setIsConnectingSpotify] = useState(false);
+  const [isDisconnectingSpotify, setIsDisconnectingSpotify] = useState(false);
+  const [spotifySuccessMessage, setSpotifySuccessMessage] = useState('');
+  const [spotifyErrorMessage, setSpotifyErrorMessage] = useState('');
+
   // Sync profile data whenever modal opens
   useEffect(() => {
     if (visible && user) {
@@ -54,6 +64,8 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
       setSuccessMessage('');
       setGenreSuccessMessage('');
       setGenreErrorMessage('');
+      setSpotifySuccessMessage('');
+      setSpotifyErrorMessage('');
     }
   }, [visible, user]);
 
@@ -129,6 +141,73 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
     }
   };
 
+  const handleConnectSpotify = async () => {
+    setIsConnectingSpotify(true);
+    setSpotifySuccessMessage('');
+    setSpotifyErrorMessage('');
+
+    try {
+      const redirectUri = Linking.createURL('spotify-connected');
+      const authUrl = await api.getSpotifyAuthUrl(redirectUri);
+      if (!authUrl) {
+        throw new Error('Could not retrieve Spotify authorization link.');
+      }
+
+      // Open OAuth sheet in-app
+      const result = await WebBrowser.openAuthSessionAsync(
+        authUrl,
+        redirectUri
+      );
+
+      // Refresh user profile after auth session completes/dismisses
+      if (refreshUser) {
+        await refreshUser();
+      }
+
+      const latestUser = await api.getMe();
+      if (latestUser && latestUser.spotify_id) {
+        updateUser(latestUser);
+        const name = latestUser.spotify_display_name || latestUser.spotify_id;
+        setSpotifySuccessMessage(`Connected to Spotify as @${name}!`);
+      }
+    } catch (err) {
+      console.warn('Spotify connect error:', err);
+      setSpotifyErrorMessage(err.message || 'Failed to connect Spotify account.');
+    } finally {
+      setIsConnectingSpotify(false);
+    }
+  };
+
+  const handleDisconnectSpotify = () => {
+    Alert.alert(
+      'Disconnect Spotify',
+      'Are you sure you want to disconnect your Spotify account from SongSwipe?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDisconnectingSpotify(true);
+            setSpotifySuccessMessage('');
+            setSpotifyErrorMessage('');
+            try {
+              const res = await api.disconnectSpotify();
+              if (res.success && res.user) {
+                updateUser(res.user);
+                setSpotifySuccessMessage('Spotify account unlinked successfully.');
+              }
+            } catch (err) {
+              setSpotifyErrorMessage(err.message || 'Failed to disconnect Spotify.');
+            } finally {
+              setIsDisconnectingSpotify(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleSignOut = () => {
     Alert.alert(
       'Sign Out',
@@ -200,6 +279,14 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
                     {isGoogle ? 'Google Account' : 'Email Account'}
                   </Text>
                 </View>
+                {user.spotify_id ? (
+                  <View style={[styles.authBadge, styles.spotifyAuthBadge]}>
+                    <FontAwesome name="spotify" size={13} color={COLORS.primary} />
+                    <Text style={[styles.authBadgeText, { color: COLORS.primary }]}>
+                      Spotify Linked
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </View>
 
@@ -342,6 +429,85 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
                   </View>
                 )}
               </TouchableOpacity>
+            </View>
+
+            {/* Spotify Account Section */}
+            <View style={styles.spotifySection}>
+              <View style={styles.spotifyHeaderRow}>
+                <FontAwesome name="spotify" size={22} color={COLORS.primary} />
+                <Text style={styles.sectionTitle}>Spotify Account</Text>
+              </View>
+              <Text style={styles.sectionSubtitle}>
+                {user.spotify_id
+                  ? 'Your Spotify account is connected to SongSwipe. Liked tracks can sync directly to your personal library.'
+                  : 'Link your Spotify account to export liked songs to Spotify and personalize your discovery feed.'}
+              </Text>
+
+              {/* Feedback Banners */}
+              {spotifyErrorMessage ? (
+                <View style={styles.errorBanner}>
+                  <Ionicons name="alert-circle" size={16} color={COLORS.nopeRed} />
+                  <Text style={styles.errorText}>{spotifyErrorMessage}</Text>
+                </View>
+              ) : null}
+
+              {spotifySuccessMessage ? (
+                <View style={styles.successBanner}>
+                  <Ionicons name="checkmark-circle" size={16} color={COLORS.primary} />
+                  <Text style={styles.successText}>{spotifySuccessMessage}</Text>
+                </View>
+              ) : null}
+
+              {user.spotify_id ? (
+                <View style={styles.spotifyLinkedCard}>
+                  <View style={styles.spotifyInfoRow}>
+                    <View style={styles.spotifyIconCircle}>
+                      <FontAwesome name="spotify" size={24} color={COLORS.primary} />
+                    </View>
+                    <View style={styles.spotifyTextInfo}>
+                      <View style={styles.spotifyPillRow}>
+                        <View style={styles.spotifyActiveDot} />
+                        <Text style={styles.spotifyPillText}>CONNECTED</Text>
+                      </View>
+                      <Text style={styles.spotifyUsernameText} numberOfLines={1}>
+                        @{user.spotify_display_name || user.spotify_id}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.disconnectSpotifyBtn, isDisconnectingSpotify && { opacity: 0.7 }]}
+                    onPress={handleDisconnectSpotify}
+                    disabled={isDisconnectingSpotify}
+                    activeOpacity={0.8}
+                  >
+                    {isDisconnectingSpotify ? (
+                      <ActivityIndicator size="small" color={COLORS.nopeRed} />
+                    ) : (
+                      <View style={styles.saveBtnRow}>
+                        <Ionicons name="unlink-outline" size={16} color={COLORS.nopeRed} />
+                        <Text style={styles.disconnectSpotifyText}>Disconnect</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.connectSpotifyBtn, isConnectingSpotify && { opacity: 0.7 }]}
+                  onPress={handleConnectSpotify}
+                  disabled={isConnectingSpotify}
+                  activeOpacity={0.85}
+                >
+                  {isConnectingSpotify ? (
+                    <ActivityIndicator color="#000" />
+                  ) : (
+                    <View style={styles.saveBtnRow}>
+                      <FontAwesome name="spotify" size={20} color="#000" />
+                      <Text style={styles.connectSpotifyBtnText}>Connect Spotify Account</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Divider */}
@@ -637,5 +803,104 @@ const styles = StyleSheet.create({
     color: COLORS.nopeRed,
     fontSize: 15,
     fontWeight: '700',
+  },
+  spotifyAuthBadge: {
+    borderColor: 'rgba(29, 185, 84, 0.3)',
+    backgroundColor: 'rgba(29, 185, 84, 0.1)',
+  },
+  spotifySection: {
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  spotifyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  spotifyLinkedCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(29, 185, 84, 0.2)',
+  },
+  spotifyInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  spotifyIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(29, 185, 84, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spotifyTextInfo: {
+    flex: 1,
+  },
+  spotifyPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 3,
+  },
+  spotifyActiveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.primary,
+  },
+  spotifyPillText: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  spotifyUsernameText: {
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  disconnectSpotifyBtn: {
+    backgroundColor: 'rgba(233, 20, 41, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(233, 20, 41, 0.25)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disconnectSpotifyText: {
+    color: COLORS.nopeRed,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  connectSpotifyBtn: {
+    backgroundColor: COLORS.primary,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  connectSpotifyBtnText: {
+    color: '#000',
+    fontSize: 15,
+    fontWeight: '800',
   },
 });

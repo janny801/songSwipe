@@ -116,6 +116,30 @@ function updateGenres(userId, genres) {
   return user;
 }
 
+function updateSpotify(userId, spotifyData) {
+  const user = inMemoryUsers.get(userId);
+  if (!user) return null;
+  user.spotify_id = spotifyData.spotify_id;
+  user.spotify_display_name = spotifyData.spotify_display_name;
+  user.spotify_access_token = spotifyData.spotify_access_token;
+  user.spotify_refresh_token = spotifyData.spotify_refresh_token;
+  user.spotify_token_expires_at = spotifyData.spotify_token_expires_at;
+  user.updated_at = new Date().toISOString();
+  return user;
+}
+
+function disconnectSpotify(userId) {
+  const user = inMemoryUsers.get(userId);
+  if (!user) return null;
+  user.spotify_id = null;
+  user.spotify_display_name = null;
+  user.spotify_access_token = null;
+  user.spotify_refresh_token = null;
+  user.spotify_token_expires_at = null;
+  user.updated_at = new Date().toISOString();
+  return user;
+}
+
 module.exports = {
   inMemoryUsers,
   findUserByEmailOrUsername,
@@ -125,4 +149,6 @@ module.exports = {
   createUser,
   updateUsername,
   updateGenres,
+  updateSpotify,
+  disconnectSpotify,
 };

@@ -9,7 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { getBackendUrl, setBackendUrl } from '../services/api';
 
@@ -107,7 +107,7 @@ export default function SettingsModal({
           {/* Spotify OAuth Future Architecture Note */}
           <View style={styles.oauthNoteCard}>
             <View style={styles.oauthTitleRow}>
-              <Ionicons name="logo-spotify" size={20} color={COLORS.primary} />
+              <FontAwesome name="spotify" size={20} color={COLORS.primary} />
               <Text style={styles.oauthTitle}>Spotify Account Linking</Text>
             </View>
             <Text style={styles.oauthText}>

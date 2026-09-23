@@ -133,6 +133,7 @@ export function AuthProvider({ children }) {
         logout,
         continueAsGuest,
         updateUser,
+        refreshUser: checkAuthStatus,
         setSession,
       }}
     >

@@ -306,4 +306,40 @@ export const api = {
     }
     return data;
   },
+
+  /**
+   * Get Spotify OAuth URL to link account
+   */
+  async getSpotifyAuthUrl(returnUri = null) {
+    const params = new URLSearchParams();
+    if (returnUri) params.append('return_uri', returnUri);
+    const query = params.toString() ? `?${params.toString()}` : '';
+
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/users/spotify/login${query}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to initiate Spotify login');
+    }
+    return data.authUrl;
+  },
+
+  /**
+   * Disconnect / unlink Spotify account
+   */
+  async disconnectSpotify() {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/users/spotify/disconnect`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to disconnect Spotify account');
+    }
+    return data;
+  },
 };
