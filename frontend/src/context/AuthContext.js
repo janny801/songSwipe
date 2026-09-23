@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import { api, setAuthToken } from '../services/api';
+import { api, setAuthToken, setAuthUserId } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -8,6 +8,11 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
+
+  // Keep api service activeUserId in sync with user state
+  useEffect(() => {
+    setAuthUserId(user?.id || null);
+  }, [user?.id]);
 
   // Check current session
   const checkAuthStatus = useCallback(async () => {
@@ -30,10 +35,13 @@ export function AuthProvider({ children }) {
   const handleAuthSuccess = (data) => {
     if (data.token) {
       setToken(data.token);
-      setAuthToken(data.token);
+      setAuthToken(data.token, data.user);
     }
     if (data.user) {
       setUser(data.user);
+      if (data.user.id) {
+        setAuthUserId(data.user.id);
+      }
     }
     setIsGuest(false);
   };
@@ -96,6 +104,7 @@ export function AuthProvider({ children }) {
     setUser(null);
     setToken(null);
     setAuthToken(null);
+    setAuthUserId(null);
     setIsGuest(false);
   };
 
@@ -103,10 +112,13 @@ export function AuthProvider({ children }) {
   const setSession = (authToken, userObj) => {
     if (authToken) {
       setToken(authToken);
-      setAuthToken(authToken);
+      setAuthToken(authToken, userObj);
     }
     if (userObj) {
       setUser(userObj);
+      if (userObj.id) {
+        setAuthUserId(userObj.id);
+      }
     }
     setIsGuest(false);
   };

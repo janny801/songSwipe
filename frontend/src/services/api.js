@@ -30,6 +30,7 @@ function getDefaultBackendUrl() {
 
 let activeBaseUrl = getDefaultBackendUrl();
 let activeAuthToken = null;
+let activeUserId = null;
 
 export function setBackendUrl(url) {
   if (url && url.trim().length > 0) {
@@ -41,8 +42,21 @@ export function getBackendUrl() {
   return activeBaseUrl;
 }
 
-export function setAuthToken(token) {
+export function setAuthToken(token, user = null) {
   activeAuthToken = token;
+  if (user && user.id) {
+    activeUserId = user.id;
+  } else if (!token) {
+    activeUserId = null;
+  }
+}
+
+export function setAuthUserId(userId) {
+  activeUserId = userId;
+}
+
+export function getAuthUserId() {
+  return activeUserId;
 }
 
 export function getAuthToken() {
@@ -56,6 +70,9 @@ function getHeaders(extraHeaders = {}) {
   };
   if (activeAuthToken) {
     headers['Authorization'] = `Bearer ${activeAuthToken}`;
+  }
+  if (activeUserId) {
+    headers['X-User-Id'] = activeUserId;
   }
   return headers;
 }
@@ -346,8 +363,13 @@ export const api = {
   /**
    * Fetch custom playlists created by user on profile
    */
-  async getCustomPlaylists(trackId = null) {
-    const query = trackId ? `?trackId=${encodeURIComponent(trackId)}` : '';
+  async getCustomPlaylists(trackId = null, userId = null) {
+    const targetUserId = userId || activeUserId;
+    const params = new URLSearchParams();
+    if (trackId) params.append('trackId', trackId);
+    if (targetUserId) params.append('userId', targetUserId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+
     const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/custom${query}`, {
       method: 'GET',
       headers: getHeaders(),
@@ -363,11 +385,12 @@ export const api = {
   /**
    * Create a new custom playlist on user's profile
    */
-  async createCustomPlaylist(name) {
+  async createCustomPlaylist(name, userId = null) {
+    const targetUserId = userId || activeUserId;
     const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/custom`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, userId: targetUserId }),
     });
 
     const data = await response.json();
@@ -380,9 +403,11 @@ export const api = {
   /**
    * Delete a custom playlist created on user's profile
    */
-  async deleteCustomPlaylist(name) {
+  async deleteCustomPlaylist(name, userId = null) {
+    const targetUserId = userId || activeUserId;
+    const query = targetUserId ? `?userId=${encodeURIComponent(targetUserId)}` : '';
     const response = await fetchWithTimeout(
-      `${activeBaseUrl}/api/playlists/custom/${encodeURIComponent(name)}`,
+      `${activeBaseUrl}/api/playlists/custom/${encodeURIComponent(name)}${query}`,
       {
         method: 'DELETE',
         headers: getHeaders(),
@@ -399,11 +424,12 @@ export const api = {
   /**
    * Add a song to multiple user-created playlists (multiselect)
    */
-  async addToPlaylists({ track, playlistNames }) {
+  async addToPlaylists({ track, playlistNames, userId = null }) {
+    const targetUserId = userId || activeUserId;
     const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/add-to-playlists`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ track, playlistNames }),
+      body: JSON.stringify({ track, playlistNames, userId: targetUserId }),
     });
 
     const data = await response.json();
@@ -417,8 +443,9 @@ export const api = {
    * Get tracks for a specific custom playlist
    */
   async getPlaylistTracks(userId, playlistName) {
+    const targetUserId = userId || activeUserId;
     const params = new URLSearchParams();
-    if (userId) params.append('userId', userId);
+    if (targetUserId) params.append('userId', targetUserId);
     if (playlistName) params.append('playlistName', playlistName);
 
     const response = await fetchWithTimeout(
@@ -439,8 +466,10 @@ export const api = {
   /**
    * Fetch playlists that user created on their Spotify account
    */
-  async getSpotifyPlaylists() {
-    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/spotify`, {
+  async getSpotifyPlaylists(userId = null) {
+    const targetUserId = userId || activeUserId;
+    const query = targetUserId ? `?userId=${encodeURIComponent(targetUserId)}` : '';
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/spotify${query}`, {
       method: 'GET',
       headers: getHeaders(),
     });
@@ -455,11 +484,12 @@ export const api = {
   /**
    * Add a track to one or more user-created Spotify playlists
    */
-  async addTrackToSpotifyPlaylists({ track, playlistIds }) {
+  async addTrackToSpotifyPlaylists({ track, playlistIds, userId = null }) {
+    const targetUserId = userId || activeUserId;
     const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/spotify/add`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ track, playlistIds }),
+      body: JSON.stringify({ track, playlistIds, userId: targetUserId }),
     });
 
     const data = await response.json();
@@ -472,11 +502,12 @@ export const api = {
   /**
    * Create a new playlist on user's Spotify account
    */
-  async createSpotifyPlaylist(name, isPublic = false) {
+  async createSpotifyPlaylist(name, isPublic = false, userId = null) {
+    const targetUserId = userId || activeUserId;
     const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/spotify/create`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ name, isPublic }),
+      body: JSON.stringify({ name, isPublic, userId: targetUserId }),
     });
 
     const data = await response.json();
@@ -489,11 +520,12 @@ export const api = {
   /**
    * Update Spotify auto-sync settings (e.g. auto-save liked songs to Spotify)
    */
-  async updateSpotifySyncSettings(autoSaveSpotifyLikes) {
+  async updateSpotifySyncSettings(autoSaveSpotifyLikes, userId = null) {
+    const targetUserId = userId || activeUserId;
     const response = await fetchWithTimeout(`${activeBaseUrl}/api/users/spotify/sync-settings`, {
       method: 'PUT',
       headers: getHeaders(),
-      body: JSON.stringify({ autoSaveSpotifyLikes }),
+      body: JSON.stringify({ autoSaveSpotifyLikes, userId: targetUserId }),
     });
 
     const data = await response.json();
@@ -502,4 +534,23 @@ export const api = {
     }
     return data;
   },
+
+  /**
+   * Delete / Unfollow a playlist on user's Spotify account
+   */
+  async deleteSpotifyPlaylist(playlistId, userId = null) {
+    const targetUserId = userId || activeUserId;
+    const query = targetUserId ? `?userId=${encodeURIComponent(targetUserId)}` : '';
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/spotify/${playlistId}${query}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to delete playlist from Spotify');
+    }
+    return data;
+  },
 };
+

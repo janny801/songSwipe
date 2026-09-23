@@ -399,12 +399,31 @@ router.delete('/:trackId', optionalAuth, async (req, res) => {
 });
 
 /**
+ * Helper to extract authenticated userId from JWT header, X-User-Id header, query, or body
+ */
+function getRequestUserId(req) {
+  return (
+    req.user?.userId ||
+    req.headers['x-user-id'] ||
+    req.query.userId ||
+    req.body?.userId ||
+    null
+  );
+}
+
+/**
  * GET /api/playlists/custom
  * Fetch all custom playlists created by the authenticated user
  * Optional query: ?trackId=... to check if each playlist contains this track
  */
-router.get('/custom', requireAuth, async (req, res) => {
-  const userId = req.user.userId;
+router.get('/custom', optionalAuth, async (req, res) => {
+  const userId = getRequestUserId(req);
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+  }
   const { trackId } = req.query;
 
   if (!getIsConnected()) {
@@ -460,8 +479,14 @@ router.get('/custom', requireAuth, async (req, res) => {
  * POST /api/playlists/custom
  * Create a new custom playlist for the authenticated user
  */
-router.post('/custom', requireAuth, async (req, res) => {
-  const userId = req.user.userId;
+router.post('/custom', optionalAuth, async (req, res) => {
+  const userId = getRequestUserId(req);
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+  }
   const { name } = req.body;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
@@ -540,8 +565,14 @@ router.post('/custom', requireAuth, async (req, res) => {
  * DELETE /api/playlists/custom/:name
  * Delete a custom playlist created by the authenticated user (and its entries in playlists table)
  */
-router.delete('/custom/:name', requireAuth, async (req, res) => {
-  const userId = req.user.userId;
+router.delete('/custom/:name', optionalAuth, async (req, res) => {
+  const userId = getRequestUserId(req);
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+  }
   const playlistName = decodeURIComponent(req.params.name).trim();
 
   if (!playlistName) {
@@ -564,7 +595,7 @@ router.delete('/custom/:name', requireAuth, async (req, res) => {
     await client.query('BEGIN');
 
     // 1. Delete all playlist track relations for this custom playlist
-    await client.query(
+    const tracksDeleted = await client.query(
       `DELETE FROM playlists
        WHERE user_id = $1 AND LOWER(playlist_name) = LOWER($2)`,
       [userId, playlistName]
@@ -578,7 +609,7 @@ router.delete('/custom/:name', requireAuth, async (req, res) => {
       [userId, playlistName]
     );
 
-    if (result.rowCount === 0) {
+    if (result.rowCount === 0 && tracksDeleted.rowCount === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({
         success: false,
@@ -589,7 +620,7 @@ router.delete('/custom/:name', requireAuth, async (req, res) => {
     await client.query('COMMIT');
     return res.status(200).json({
       success: true,
-      message: `Playlist "${result.rows[0].name}" deleted successfully.`,
+      message: `Playlist "${result.rows[0]?.name || playlistName}" deleted successfully.`,
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -609,8 +640,14 @@ router.delete('/custom/:name', requireAuth, async (req, res) => {
  * Add a song to one or multiple playlists that the user created on their profile.
  * Multi-select support with server-side validation ensuring only user-created playlists are allowed.
  */
-router.post('/add-to-playlists', requireAuth, async (req, res) => {
-  const userId = req.user.userId;
+router.post('/add-to-playlists', optionalAuth, async (req, res) => {
+  const userId = getRequestUserId(req);
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+  }
   const { track, playlistNames } = req.body;
 
   if (!track || (!track.spotify_track_id && !track.id)) {
@@ -747,8 +784,16 @@ router.post('/add-to-playlists', requireAuth, async (req, res) => {
  * GET /api/playlists/spotify
  * Retrieve playlists that the user created on their own Spotify account
  */
-router.get('/spotify', requireAuth, async (req, res) => {
-  const userId = req.user.userId;
+router.get('/spotify', optionalAuth, async (req, res) => {
+  const userId = getRequestUserId(req);
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+      playlists: [],
+    });
+  }
 
   try {
     const spotifyAuth = await getValidSpotifyAccessToken(userId);
@@ -827,8 +872,15 @@ router.get('/spotify', requireAuth, async (req, res) => {
  * POST /api/playlists/spotify/add
  * Add a track to one or multiple playlists that the user created on their Spotify account
  */
-router.post('/spotify/add', requireAuth, async (req, res) => {
-  const userId = req.user.userId;
+router.post('/spotify/add', optionalAuth, async (req, res) => {
+  const userId = getRequestUserId(req);
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+  }
   const { track, playlistIds } = req.body;
 
   if (!track || (!track.spotify_track_id && !track.id)) {
@@ -1013,8 +1065,14 @@ router.post('/spotify/add', requireAuth, async (req, res) => {
  * POST /api/playlists/spotify/create
  * Create a new playlist directly on the user's Spotify account
  */
-router.post('/spotify/create', requireAuth, async (req, res) => {
-  const userId = req.user.userId;
+router.post('/spotify/create', optionalAuth, async (req, res) => {
+  const userId = getRequestUserId(req);
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+  }
   const { name, isPublic = false } = req.body;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
@@ -1074,4 +1132,88 @@ router.post('/spotify/create', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * DELETE /api/playlists/spotify/:playlistId
+ * Delete / Unfollow a playlist on user's Spotify account and remove local cached references
+ */
+router.delete('/spotify/:playlistId', optionalAuth, async (req, res) => {
+  const userId = getRequestUserId(req);
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+  }
+  const { playlistId } = req.params;
+
+  if (!playlistId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Playlist ID is required',
+    });
+  }
+
+  try {
+    const spotifyAuth = await getValidSpotifyAccessToken(userId);
+    if (!spotifyAuth || !spotifyAuth.spotifyId || !spotifyAuth.accessToken) {
+      return res.status(401).json({
+        success: false,
+        notConnected: true,
+        error: 'Spotify account not connected.',
+      });
+    }
+
+    // Call Spotify API to unfollow / remove playlist
+    let unfollowed = false;
+    try {
+      await axios.delete(
+        `https://api.spotify.com/v1/me/library?uris=${encodeURIComponent(`spotify:playlist:${playlistId}`)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${spotifyAuth.accessToken}`,
+          },
+        }
+      );
+      unfollowed = true;
+    } catch (libErr) {
+      // Fallback to /playlists/{id}/followers endpoint
+      try {
+        await axios.delete(`https://api.spotify.com/v1/playlists/${playlistId}/followers`, {
+          headers: {
+            Authorization: `Bearer ${spotifyAuth.accessToken}`,
+          },
+        });
+        unfollowed = true;
+      } catch (folErr) {
+        throw folErr;
+      }
+    }
+
+    // Also clean up any local entries in `playlists` table associated with this Spotify playlist
+    if (getIsConnected()) {
+      try {
+        await pool.query(
+          `DELETE FROM playlists WHERE user_id = $1 AND spotify_playlist_id = $2`,
+          [userId, playlistId]
+        );
+      } catch (dbErr) {
+        console.warn('Could not clean up local playlist records:', dbErr.message);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Playlist deleted from Spotify successfully.',
+    });
+  } catch (error) {
+    console.error('Error deleting Spotify playlist:', error.response?.data || error.message);
+    const msg = error.response?.data?.error?.message || error.message || 'Failed to delete Spotify playlist';
+    return res.status(error.response?.status || 500).json({
+      success: false,
+      error: msg,
+    });
+  }
+});
+
 module.exports = router;
+

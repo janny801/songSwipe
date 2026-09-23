@@ -76,13 +76,13 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
     setIsLoadingPlaylists(true);
     try {
       if (user.spotify_id) {
-        const spotifyData = await api.getSpotifyPlaylists();
+        const spotifyData = await api.getSpotifyPlaylists(user.id);
         if (spotifyData.success && Array.isArray(spotifyData.playlists)) {
           setPlaylists(spotifyData.playlists);
           return;
         }
       }
-      const data = await api.getCustomPlaylists();
+      const data = await api.getCustomPlaylists(null, user.id);
       setPlaylists(data);
     } catch (err) {
       console.warn('Error loading playlists:', err.message);
@@ -117,7 +117,7 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
     setIsUpdatingSyncSetting(true);
     setSpotifyErrorMessage('');
     try {
-      const res = await api.updateSpotifySyncSettings(newValue);
+      const res = await api.updateSpotifySyncSettings(newValue, user?.id);
       if (res.success) {
         updateUser({ auto_save_spotify_likes: newValue });
         setSpotifySuccessMessage(
@@ -302,13 +302,13 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
     setIsCreatingPlaylist(true);
     try {
       if (user?.spotify_id) {
-        const res = await api.createSpotifyPlaylist(clean, false);
+        const res = await api.createSpotifyPlaylist(clean, false, user?.id);
         setNewPlaylistName('');
         setShowCreatePlaylist(false);
         setPlaylists((prev) => [res, ...prev]);
         setPlaylistSuccessMessage(`Spotify Playlist "${res.name}" created!`);
       } else {
-        const res = await api.createCustomPlaylist(clean);
+        const res = await api.createCustomPlaylist(clean, user?.id);
         setNewPlaylistName('');
         setShowCreatePlaylist(false);
         setPlaylists((prev) => [res, ...prev]);
@@ -322,9 +322,16 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
   };
 
   const handleDeletePlaylist = (item) => {
+    setPlaylistErrorMessage('');
+    setPlaylistSuccessMessage('');
+
+    const isSpotifyPlaylist = Boolean(user?.spotify_id && item.id);
+
     Alert.alert(
       'Delete Playlist',
-      `Are you sure you want to delete "${item.name}"? Any tracks added to this playlist will be removed from it.`,
+      isSpotifyPlaylist
+        ? `Are you sure you want to delete "${item.name}" from your Spotify account?`
+        : `Are you sure you want to delete "${item.name}"? Any tracks added to this playlist will be removed.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -332,10 +339,33 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.deleteCustomPlaylist(item.name);
-              setPlaylists((prev) => prev.filter((p) => p.name !== item.name));
-              setPlaylistSuccessMessage(`Playlist "${item.name}" deleted.`);
+              if (isSpotifyPlaylist) {
+                await api.deleteSpotifyPlaylist(item.id, user?.id);
+                setPlaylists((prev) =>
+                  prev.filter((p) => p.id !== item.id && p.name !== item.name)
+                );
+                setPlaylistSuccessMessage(`Spotify Playlist "${item.name}" deleted.`);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+              } else {
+                await api.deleteCustomPlaylist(item.name, user?.id);
+                setPlaylists((prev) =>
+                  prev.filter((p) => (item.id ? p.id !== item.id : p.name !== item.name))
+                );
+                setPlaylistSuccessMessage(`Playlist "${item.name}" deleted.`);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+              }
             } catch (err) {
+              // If Spotify delete failed, try custom playlist delete fallback
+              if (isSpotifyPlaylist) {
+                try {
+                  await api.deleteCustomPlaylist(item.name, user?.id);
+                  setPlaylists((prev) =>
+                    prev.filter((p) => p.id !== item.id && p.name !== item.name)
+                  );
+                  setPlaylistSuccessMessage(`Playlist "${item.name}" deleted.`);
+                  return;
+                } catch (_) {}
+              }
               setPlaylistErrorMessage(err.message || 'Failed to delete playlist.');
             }
           },

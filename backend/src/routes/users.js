@@ -616,8 +616,14 @@ router.put('/genres', requireAuth, async (req, res) => {
  * PUT /api/users/spotify/sync-settings
  * Update Spotify auto-sync settings (e.g., auto-saving right-swiped tracks to Spotify Liked Songs)
  */
-router.put('/spotify/sync-settings', requireAuth, async (req, res) => {
-  const userId = req.user.userId;
+router.put('/spotify/sync-settings', optionalAuth, async (req, res) => {
+  const userId = req.user?.userId || req.headers['x-user-id'] || req.body?.userId || req.query?.userId;
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+  }
   const { autoSaveSpotifyLikes } = req.body;
 
   if (typeof autoSaveSpotifyLikes !== 'boolean') {

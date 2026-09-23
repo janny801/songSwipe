@@ -113,7 +113,7 @@ export default function AddToPlaylistModal({
     setNeedsReauth(false);
 
     try {
-      const res = await api.getSpotifyPlaylists();
+      const res = await api.getSpotifyPlaylists(user?.id);
       if (res.notConnected) {
         setNotConnected(true);
         setPlaylists([]);
@@ -131,7 +131,7 @@ export default function AddToPlaylistModal({
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     if (visible && track) {
@@ -191,7 +191,7 @@ export default function AddToPlaylistModal({
     setIsCreating(true);
     setErrorMsg('');
     try {
-      const created = await api.createSpotifyPlaylist(clean, false);
+      const created = await api.createSpotifyPlaylist(clean, false, user?.id);
       setNewPlaylistName('');
       setShowCreateInput(false);
       setPlaylists((prev) => [created, ...prev]);
@@ -214,7 +214,7 @@ export default function AddToPlaylistModal({
 
     try {
       const playlistIds = Array.from(selectedPlaylists);
-      const res = await api.addTrackToSpotifyPlaylists({ track: displayTrack, playlistIds });
+      const res = await api.addTrackToSpotifyPlaylists({ track: displayTrack, playlistIds, userId: user?.id });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setSuccessMsg(
