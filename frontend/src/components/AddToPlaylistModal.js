@@ -37,7 +37,6 @@ export default function AddToPlaylistModal({
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
   const [notConnected, setNotConnected] = useState(false);
   const [needsReauth, setNeedsReauth] = useState(false);
   const [isConnectingSpotify, setIsConnectingSpotify] = useState(false);
@@ -143,7 +142,6 @@ export default function AddToPlaylistModal({
     if (visible && track) {
       setSelectedPlaylists(new Set());
       setErrorMsg('');
-      setSuccessMsg('');
       setShowCreateInput(false);
       setNewPlaylistName('');
       loadSpotifyPlaylists();
@@ -216,23 +214,26 @@ export default function AddToPlaylistModal({
 
     setIsSubmitting(true);
     setErrorMsg('');
-    setSuccessMsg('');
 
     try {
       const playlistIds = Array.from(selectedPlaylists);
-      const res = await api.addTrackToSpotifyPlaylists({ track: displayTrack, playlistIds, userId: user?.id });
+      await api.addTrackToSpotifyPlaylists({ track: displayTrack, playlistIds, userId: user?.id });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      setSuccessMsg(
-        `Added "${displayTrack.name}" to ${playlistIds.length} Spotify playlist${
-          playlistIds.length > 1 ? 's' : ''
-        }!`
-      );
 
-      setTimeout(() => {
-        onSuccess && onSuccess(playlistIds);
-        handleDismiss();
-      }, 700);
+      // Collect selected playlist names for toast display
+      const selectedNames = playlists
+        .filter((p) => selectedPlaylists.has(p.id))
+        .map((p) => p.name);
+
+      handleDismiss();
+      if (onSuccess) {
+        onSuccess({
+          playlistIds,
+          playlistNames: selectedNames,
+          track: displayTrack,
+        });
+      }
     } catch (err) {
       setErrorMsg(err.message || 'Failed to add song to Spotify playlists');
     } finally {
@@ -316,13 +317,6 @@ export default function AddToPlaylistModal({
           <View style={styles.errorBanner}>
             <Ionicons name="alert-circle" size={16} color={COLORS.nopeRed} />
             <Text style={styles.errorText}>{errorMsg}</Text>
-          </View>
-        ) : null}
-
-        {successMsg ? (
-          <View style={styles.successBanner}>
-            <Ionicons name="checkmark-circle" size={16} color={COLORS.primary} />
-            <Text style={styles.successText}>{successMsg}</Text>
           </View>
         ) : null}
 

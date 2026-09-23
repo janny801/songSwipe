@@ -326,7 +326,9 @@ function MainApp() {
             <FontAwesome name="spotify" size={20} color="#1DB954" />
           </View>
           <View style={styles.toastTextWrapper}>
-            <Text style={styles.toastTitle}>{toastMessage.title || 'Added to Liked Songs'}</Text>
+            <Text style={styles.toastTitle} numberOfLines={1}>
+              {toastMessage.title || 'Added to Liked Songs'}
+            </Text>
             {toastMessage.subtitle ? (
               <Text style={styles.toastSubtitle} numberOfLines={1}>
                 {toastMessage.subtitle}
@@ -435,9 +437,31 @@ function MainApp() {
           setIsAddToPlaylistVisible(false);
           setSelectedTrackForPlaylists(null);
         }}
-        onSuccess={(playlistNames) => {
+        onSuccess={(result) => {
           setIsAddToPlaylistVisible(false);
-          setSelectedTrackForPlaylists(null);
+          setTimeout(() => {
+            setSelectedTrackForPlaylists(null);
+          }, 350);
+
+          const names = Array.isArray(result?.playlistNames)
+            ? result.playlistNames
+            : Array.isArray(result)
+            ? result
+            : [];
+          const count = names.length || result?.playlistIds?.length || 1;
+          const trackName = result?.track?.name || selectedTrackForPlaylists?.name || 'Song';
+
+          let title = 'Added to Playlist';
+          if (count === 1 && names[0]) {
+            title = `Added to ${names[0]}`;
+          } else if (count > 1) {
+            title = `Added to ${count} Playlists`;
+          }
+
+          showToast({
+            title,
+            subtitle: `${trackName} • Spotify`,
+          });
         }}
       />
 
