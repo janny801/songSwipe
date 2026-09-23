@@ -32,6 +32,7 @@ import SignInModal from './src/components/SignInModal';
 import ChooseUsernameModal from './src/components/ChooseUsernameModal';
 import ProfileModal from './src/components/ProfileModal';
 import AddToPlaylistModal from './src/components/AddToPlaylistModal';
+import SwipeableToast from './src/components/SwipeableToast';
 
 function MainApp() {
   const { user, logout, isAuthenticated } = useAuth();
@@ -50,49 +51,12 @@ function MainApp() {
   const [selectedTrackForPlaylists, setSelectedTrackForPlaylists] = useState(null);
   const [isAddToPlaylistVisible, setIsAddToPlaylistVisible] = useState(false);
 
-  // Toast notification state for right-swipe feedback
+  // Toast notification state for right-swipe and playlist actions
   const [toastMessage, setToastMessage] = useState(null);
-  const toastFadeAnim = useRef(new Animated.Value(0)).current;
-  const toastSlideAnim = useRef(new Animated.Value(-60)).current;
-  const toastTimeoutRef = useRef(null);
 
   const showToast = useCallback((msg) => {
-    if (toastTimeoutRef.current) {
-      clearTimeout(toastTimeoutRef.current);
-    }
-    setToastMessage(msg);
-
-    Animated.parallel([
-      Animated.timing(toastFadeAnim, {
-        toValue: 1,
-        duration: 220,
-        useNativeDriver: true,
-      }),
-      Animated.spring(toastSlideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 50,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    toastTimeoutRef.current = setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(toastFadeAnim, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(toastSlideAnim, {
-          toValue: -60,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        setToastMessage(null);
-      });
-    }, 2500);
-  }, [toastFadeAnim, toastSlideAnim]);
+    setToastMessage({ ...msg, id: Date.now() });
+  }, []);
 
   const deckRef = useRef(null);
 
@@ -310,36 +274,11 @@ function MainApp() {
         onOpenProfile={() => setIsProfileVisible(true)}
       />
 
-      {/* Toast Notification for Auto-Save to Liked Songs */}
-      {toastMessage && (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.toastContainer,
-            {
-              opacity: toastFadeAnim,
-              transform: [{ translateY: toastSlideAnim }],
-            },
-          ]}
-        >
-          <View style={styles.toastIconWrapper}>
-            <FontAwesome name="spotify" size={20} color="#1DB954" />
-          </View>
-          <View style={styles.toastTextWrapper}>
-            <Text style={styles.toastTitle} numberOfLines={1}>
-              {toastMessage.title || 'Added to Liked Songs'}
-            </Text>
-            {toastMessage.subtitle ? (
-              <Text style={styles.toastSubtitle} numberOfLines={1}>
-                {toastMessage.subtitle}
-              </Text>
-            ) : null}
-          </View>
-          <View style={styles.toastCheckmark}>
-            <Ionicons name="checkmark-circle" size={18} color="#1DB954" />
-          </View>
-        </Animated.View>
-      )}
+      {/* Toast Notification Banner with Swipe-Up to Dismiss */}
+      <SwipeableToast
+        toastMessage={toastMessage}
+        onDismiss={() => setToastMessage(null)}
+      />
 
       {/* Main Swipeable Card Deck */}
       <View style={styles.contentArea}>
@@ -536,51 +475,5 @@ const styles = StyleSheet.create({
     color: '#000',
     fontWeight: '700',
     fontSize: 14,
-  },
-  toastContainer: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 62 : 50,
-    left: 18,
-    right: 18,
-    backgroundColor: '#1E1E1E',
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    zIndex: 99999,
-    elevation: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(29, 185, 84, 0.4)',
-  },
-  toastIconWrapper: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(29, 185, 84, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  toastTextWrapper: {
-    flex: 1,
-  },
-  toastTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  toastSubtitle: {
-    color: '#A0A0A0',
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  toastCheckmark: {
-    marginLeft: 8,
   },
 });
