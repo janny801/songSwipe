@@ -741,7 +741,7 @@ router.get('/spotify', requireAuth, async (req, res) => {
         id: pl.id,
         name: pl.name,
         description: pl.description || '',
-        track_count: pl.tracks?.total || 0,
+        track_count: pl.items?.total ?? pl.tracks?.total ?? 0,
         image_url: pl.images?.[0]?.url || null,
         owner_id: pl.owner?.id,
         owner_name: pl.owner?.display_name || pl.owner?.id,
@@ -819,11 +819,39 @@ router.post('/spotify/add', requireAuth, async (req, res) => {
       });
     }
 
-    // Format Spotify track URI
-    const rawTrackId = track.spotify_track_id || track.id;
-    const trackUri = rawTrackId.startsWith('spotify:track:')
-      ? rawTrackId
-      : `spotify:track:${rawTrackId}`;
+    // Format Spotify track URI & clean track ID
+    let cleanTrackId = track.spotify_track_id || track.spotifyTrackId;
+
+    if (!cleanTrackId && (track.track_id || track.id)) {
+      const candidateId = track.track_id || track.id;
+      // If it looks like a DB UUID (hyphens) or we have PostgreSQL connected, look up in DB
+      if (getIsConnected()) {
+        try {
+          const dbTrack = await pool.query(
+            'SELECT spotify_track_id FROM tracks WHERE id::text = $1 OR spotify_track_id = $1 LIMIT 1',
+            [candidateId]
+          );
+          if (dbTrack.rows.length > 0 && dbTrack.rows[0].spotify_track_id) {
+            cleanTrackId = dbTrack.rows[0].spotify_track_id;
+          }
+        } catch (e) {
+          // not found or not uuid
+        }
+      }
+      if (!cleanTrackId) {
+        cleanTrackId = candidateId;
+      }
+    }
+
+    if (!cleanTrackId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing track data in request body',
+      });
+    }
+
+    cleanTrackId = String(cleanTrackId).replace(/^spotify:track:/, '');
+    const trackUri = `spotify:track:${cleanTrackId}`;
 
     const successfulAdds = [];
     const errors = [];
@@ -841,17 +869,36 @@ router.post('/spotify/add', requireAuth, async (req, res) => {
           continue;
         }
 
-        // Add track to Spotify playlist
-        await axios.post(
-          `https://api.spotify.com/v1/playlists/${plId}/tracks`,
-          { uris: [trackUri] },
-          {
-            headers: {
-              Authorization: `Bearer ${spotifyAuth.accessToken}`,
-              'Content-Type': 'application/json',
-            },
+        // Add track to Spotify playlist using modern /items endpoint (Spotify removed /tracks)
+        let addRes;
+        try {
+          addRes = await axios.post(
+            `https://api.spotify.com/v1/playlists/${plId}/items`,
+            { uris: [trackUri] },
+            {
+              headers: {
+                Authorization: `Bearer ${spotifyAuth.accessToken}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+        } catch (postErr) {
+          // Fallback to /tracks in case /items is not supported on certain legacy versions
+          if (postErr.response?.status === 404) {
+            addRes = await axios.post(
+              `https://api.spotify.com/v1/playlists/${plId}/tracks`,
+              { uris: [trackUri] },
+              {
+                headers: {
+                  Authorization: `Bearer ${spotifyAuth.accessToken}`,
+                  'Content-Type': 'application/json',
+                },
+              }
+            );
+          } else {
+            throw postErr;
           }
-        );
+        }
 
         successfulAdds.push({
           id: plId,
@@ -873,7 +920,7 @@ router.post('/spotify/add', requireAuth, async (req, res) => {
                  duration_ms = EXCLUDED.duration_ms
                RETURNING id`,
               [
-                rawTrackId,
+                cleanTrackId,
                 track.name || 'Unknown Track',
                 track.artist || 'Unknown Artist',
                 track.album || '',

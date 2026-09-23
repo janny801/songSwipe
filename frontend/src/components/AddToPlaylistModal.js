@@ -214,11 +214,11 @@ export default function AddToPlaylistModal({
 
     try {
       const playlistIds = Array.from(selectedPlaylists);
-      const res = await api.addTrackToSpotifyPlaylists({ track, playlistIds });
+      const res = await api.addTrackToSpotifyPlaylists({ track: displayTrack, playlistIds });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setSuccessMsg(
-        `Added "${track.name}" to ${playlistIds.length} Spotify playlist${
+        `Added "${displayTrack.name}" to ${playlistIds.length} Spotify playlist${
           playlistIds.length > 1 ? 's' : ''
         }!`
       );
@@ -234,12 +234,18 @@ export default function AddToPlaylistModal({
     }
   };
 
-  if (!isRendered || !track) return null;
+  const activeTrackRef = useRef(track);
+  if (track) {
+    activeTrackRef.current = track;
+  }
+  const displayTrack = track || activeTrackRef.current;
+
+  if (!isRendered || !displayTrack) return null;
 
   const selectedCount = selectedPlaylists.size;
   const albumArt =
-    track.album_art_url ||
-    track.albumArtUrl ||
+    displayTrack.album_art_url ||
+    displayTrack.albumArtUrl ||
     'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400';
 
   return (
@@ -288,10 +294,10 @@ export default function AddToPlaylistModal({
           <Image source={{ uri: albumArt }} style={styles.trackThumb} />
           <View style={styles.trackInfo}>
             <Text style={styles.trackTitle} numberOfLines={1}>
-              {track.name}
+              {displayTrack.name}
             </Text>
             <Text style={styles.trackArtist} numberOfLines={1}>
-              {track.artist}
+              {displayTrack.artist}
             </Text>
           </View>
           <View style={styles.multiselectBadge}>
