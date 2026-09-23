@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -56,6 +56,28 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
   const [spotifySuccessMessage, setSpotifySuccessMessage] = useState('');
   const [spotifyErrorMessage, setSpotifyErrorMessage] = useState('');
 
+  // Custom Playlists state
+  const [playlists, setPlaylists] = useState([]);
+  const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(false);
+  const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
+  const [playlistSuccessMessage, setPlaylistSuccessMessage] = useState('');
+  const [playlistErrorMessage, setPlaylistErrorMessage] = useState('');
+
+  const loadPlaylists = useCallback(async () => {
+    if (!user) return;
+    setIsLoadingPlaylists(true);
+    try {
+      const data = await api.getCustomPlaylists();
+      setPlaylists(data);
+    } catch (err) {
+      console.warn('Error loading custom playlists:', err.message);
+    } finally {
+      setIsLoadingPlaylists(false);
+    }
+  }, [user]);
+
   // Sync profile data whenever modal opens
   useEffect(() => {
     if (visible && user) {
@@ -67,8 +89,13 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
       setGenreErrorMessage('');
       setSpotifySuccessMessage('');
       setSpotifyErrorMessage('');
+      setPlaylistSuccessMessage('');
+      setPlaylistErrorMessage('');
+      setShowCreatePlaylist(false);
+      setNewPlaylistName('');
+      loadPlaylists();
     }
-  }, [visible, user]);
+  }, [visible, user, loadPlaylists]);
 
   const toggleGenre = (genreId) => {
     setGenreSuccessMessage('');
@@ -221,6 +248,51 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
           onPress: () => {
             onClose();
             logout();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCreatePlaylist = async () => {
+    const clean = newPlaylistName.trim();
+    setPlaylistErrorMessage('');
+    setPlaylistSuccessMessage('');
+    if (!clean) {
+      setPlaylistErrorMessage('Please enter a playlist name.');
+      return;
+    }
+    setIsCreatingPlaylist(true);
+    try {
+      const res = await api.createCustomPlaylist(clean);
+      setNewPlaylistName('');
+      setShowCreatePlaylist(false);
+      setPlaylists((prev) => [res, ...prev]);
+      setPlaylistSuccessMessage(`Playlist "${res.name}" created!`);
+    } catch (err) {
+      setPlaylistErrorMessage(err.message || 'Failed to create playlist.');
+    } finally {
+      setIsCreatingPlaylist(false);
+    }
+  };
+
+  const handleDeletePlaylist = (item) => {
+    Alert.alert(
+      'Delete Playlist',
+      `Are you sure you want to delete "${item.name}"? Any tracks added to this playlist will be removed from it.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteCustomPlaylist(item.name);
+              setPlaylists((prev) => prev.filter((p) => p.name !== item.name));
+              setPlaylistSuccessMessage(`Playlist "${item.name}" deleted.`);
+            } catch (err) {
+              setPlaylistErrorMessage(err.message || 'Failed to delete playlist.');
+            }
           },
         },
       ]
@@ -535,6 +607,121 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
                     </View>
                   )}
                 </TouchableOpacity>
+              )}
+            </View>
+
+            {/* My Playlists Section */}
+            <View style={styles.playlistsSection}>
+              <View style={styles.playlistsHeaderRow}>
+                <Ionicons name="folder-open" size={20} color={COLORS.primary} />
+                <Text style={styles.sectionTitle}>My Playlists</Text>
+              </View>
+              <Text style={styles.sectionSubtitle}>
+                Playlists created on your profile. Songs can be added and organized directly into these playlists.
+              </Text>
+
+              {/* Playlist Feedback Banners */}
+              {playlistErrorMessage ? (
+                <View style={styles.errorBanner}>
+                  <Ionicons name="alert-circle" size={16} color={COLORS.nopeRed} />
+                  <Text style={styles.errorText}>{playlistErrorMessage}</Text>
+                </View>
+              ) : null}
+
+              {playlistSuccessMessage ? (
+                <View style={styles.successBanner}>
+                  <Ionicons name="checkmark-circle" size={16} color={COLORS.primary} />
+                  <Text style={styles.successText}>{playlistSuccessMessage}</Text>
+                </View>
+              ) : null}
+
+              {/* Create Playlist Input or Trigger */}
+              {showCreatePlaylist ? (
+                <View style={styles.createPlaylistInputRow}>
+                  <TextInput
+                    style={styles.createPlaylistInput}
+                    placeholder="New playlist name..."
+                    placeholderTextColor={COLORS.textMuted}
+                    value={newPlaylistName}
+                    onChangeText={setNewPlaylistName}
+                    autoFocus={true}
+                    maxLength={50}
+                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.confirmCreateBtn,
+                      (!newPlaylistName.trim() || isCreatingPlaylist) && { opacity: 0.5 },
+                    ]}
+                    onPress={handleCreatePlaylist}
+                    disabled={!newPlaylistName.trim() || isCreatingPlaylist}
+                  >
+                    {isCreatingPlaylist ? (
+                      <ActivityIndicator size="small" color="#000" />
+                    ) : (
+                      <Text style={styles.confirmCreateBtnText}>Create</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.cancelCreateBtn}
+                    onPress={() => {
+                      setShowCreatePlaylist(false);
+                      setNewPlaylistName('');
+                    }}
+                  >
+                    <Ionicons name="close" size={20} color={COLORS.textMuted} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.addPlaylistBtn}
+                  onPress={() => setShowCreatePlaylist(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="add-circle" size={18} color="#000" />
+                  <Text style={styles.addPlaylistBtnText}>Create New Playlist</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Playlists List */}
+              {isLoadingPlaylists ? (
+                <View style={styles.playlistLoadingBox}>
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                  <Text style={styles.playlistLoadingText}>Loading playlists...</Text>
+                </View>
+              ) : playlists.length === 0 ? (
+                <View style={styles.emptyPlaylistsBox}>
+                  <Ionicons name="albums-outline" size={26} color={COLORS.textMuted} />
+                  <Text style={styles.emptyPlaylistsText}>
+                    No custom playlists created yet. Create one above to organize your music!
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.playlistsList}>
+                  {playlists.map((pl) => (
+                    <View key={pl.id || pl.name} style={styles.playlistCard}>
+                      <View style={styles.playlistCardLeft}>
+                        <View style={styles.playlistCardIcon}>
+                          <Ionicons name="musical-notes" size={16} color={COLORS.primary} />
+                        </View>
+                        <View style={styles.playlistCardText}>
+                          <Text style={styles.playlistCardName} numberOfLines={1}>
+                            {pl.name}
+                          </Text>
+                          <Text style={styles.playlistCardCount}>
+                            {pl.track_count || 0} track{(pl.track_count || 0) === 1 ? '' : 's'}
+                          </Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.deletePlaylistBtn}
+                        onPress={() => handleDeletePlaylist(pl)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={COLORS.nopeRed} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
               )}
             </View>
 
@@ -976,5 +1163,139 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 15,
     fontWeight: '800',
+  },
+  playlistsSection: {
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 20,
+    padding: 20,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  playlistsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  addPlaylistBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    borderRadius: 14,
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  addPlaylistBtnText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  createPlaylistInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    marginTop: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  createPlaylistInput: {
+    flex: 1,
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    paddingVertical: 8,
+  },
+  confirmCreateBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  confirmCreateBtnText: {
+    color: '#000',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  cancelCreateBtn: {
+    padding: 6,
+  },
+  playlistLoadingBox: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  playlistLoadingText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+  },
+  emptyPlaylistsBox: {
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#181818',
+    borderRadius: 14,
+    gap: 8,
+    marginTop: 6,
+  },
+  emptyPlaylistsText: {
+    color: COLORS.textMuted,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  playlistsList: {
+    marginTop: 6,
+    gap: 8,
+  },
+  playlistCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1C1C1C',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  playlistCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 10,
+  },
+  playlistCardIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(29, 185, 84, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playlistCardText: {
+    flex: 1,
+  },
+  playlistCardName: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  playlistCardCount: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  deletePlaylistBtn: {
+    padding: 6,
   },
 });

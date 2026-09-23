@@ -26,6 +26,7 @@ const CardDeck = React.forwardRef(function CardDeck(
     onReset,
     isPlaying = false,
     progress = 0,
+    onAddToPlaylist,
   },
   ref
 ) {
@@ -217,6 +218,7 @@ const CardDeck = React.forwardRef(function CardDeck(
           progress={progress}
           likeOpacity={likeOpacity}
           nopeOpacity={nopeOpacity}
+          onAddToPlaylist={onAddToPlaylist}
         />
       </Animated.View>
     </View>

@@ -22,6 +22,7 @@ import SettingsModal from './src/components/SettingsModal';
 import SignInModal from './src/components/SignInModal';
 import ChooseUsernameModal from './src/components/ChooseUsernameModal';
 import ProfileModal from './src/components/ProfileModal';
+import AddToPlaylistModal from './src/components/AddToPlaylistModal';
 
 function MainApp() {
   const { user, logout, isAuthenticated } = useAuth();
@@ -37,12 +38,23 @@ function MainApp() {
   const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
   const [isChooseUsernameVisible, setIsChooseUsernameVisible] = useState(false);
   const [isProfileVisible, setIsProfileVisible] = useState(false);
+  const [selectedTrackForPlaylists, setSelectedTrackForPlaylists] = useState(null);
+  const [isAddToPlaylistVisible, setIsAddToPlaylistVisible] = useState(false);
 
   const deckRef = useRef(null);
 
   // Active track preview url for audio player
   const currentTrack = tracks[currentIndex];
   const activePreviewUrl = currentTrack?.preview_url || currentTrack?.previewUrl || null;
+
+  const handleOpenAddToPlaylists = (track) => {
+    if (!isAuthenticated) {
+      setIsAuthModalVisible(true);
+      return;
+    }
+    setSelectedTrackForPlaylists(track || currentTrack);
+    setIsAddToPlaylistVisible(true);
+  };
 
   const {
     isPlaying,
@@ -261,6 +273,7 @@ function MainApp() {
             onReset={() => setCurrentIndex(0)}
             isPlaying={isPlaying}
             progress={progress}
+            onAddToPlaylist={handleOpenAddToPlaylists}
           />
         )}
       </View>
@@ -284,6 +297,7 @@ function MainApp() {
         isLoading={isLoadingPlaylist}
         onRefresh={loadLikedPlaylist}
         onDeleteTrack={handleDeleteTrack}
+        onAddToPlaylist={handleOpenAddToPlaylists}
       />
 
       {/* Sign In & Google Authentication Modal */}
@@ -316,6 +330,20 @@ function MainApp() {
         onClose={() => setIsProfileVisible(false)}
         onGenresUpdated={() => {
           loadTracks();
+        }}
+      />
+
+      {/* Add to Custom Playlists Modal (Multiselect) */}
+      <AddToPlaylistModal
+        visible={isAddToPlaylistVisible}
+        track={selectedTrackForPlaylists}
+        onClose={() => {
+          setIsAddToPlaylistVisible(false);
+          setSelectedTrackForPlaylists(null);
+        }}
+        onSuccess={(playlistNames) => {
+          setIsAddToPlaylistVisible(false);
+          setSelectedTrackForPlaylists(null);
         }}
       />
 

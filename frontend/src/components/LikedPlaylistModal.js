@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { createAudioPlayer } from 'expo-audio';
 import { COLORS } from '../constants/theme';
+import AddToPlaylistModal from './AddToPlaylistModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const ACTION_WIDTH = 80;
@@ -28,7 +29,7 @@ function SwipeableTrackRow({
   isPlaying,
   onPlayPreview,
   onDeleteTrack,
-  onSpotifyPlaylistPress,
+  onAddToPlaylist,
 }) {
   const scrollRef = useRef(null);
 
@@ -43,11 +44,11 @@ function SwipeableTrackRow({
   const handleScrollEndDrag = (e) => {
     const offsetX = e.nativeEvent.contentOffset.x;
     if (offsetX <= 15) {
-      // Swiped right fully -> Trigger Spotify Playlist
+      // Swiped right fully -> Trigger Add to Playlist Modal
       Haptics.selectionAsync().catch(() => {});
       setTimeout(() => {
         scrollRef.current?.scrollTo({ x: ACTION_WIDTH, animated: true });
-        onSpotifyPlaylistPress(item);
+        onAddToPlaylist(item);
       }, 150);
     } else if (offsetX >= ACTION_WIDTH * 2 - 15) {
       // Swiped left fully -> Trigger Delete
@@ -59,9 +60,9 @@ function SwipeableTrackRow({
     }
   };
 
-  const handleSpotifyTap = () => {
+  const handleAddToPlaylistTap = () => {
     scrollRef.current?.scrollTo({ x: ACTION_WIDTH, animated: true });
-    onSpotifyPlaylistPress(item);
+    onAddToPlaylist(item);
   };
 
   const handleDeleteTap = () => {
@@ -91,14 +92,14 @@ function SwipeableTrackRow({
         contentContainerStyle={{ width: CARD_WIDTH + ACTION_WIDTH * 2, height: ROW_HEIGHT }}
         nestedScrollEnabled={true}
       >
-        {/* Left Action: Spotify Playlist (Revealed on Swipe Right) */}
+        {/* Left Action: Add to Playlist (Revealed on Swipe Right) */}
         <TouchableOpacity
-          style={[styles.scrollAction, styles.scrollActionSpotify]}
+          style={[styles.scrollAction, styles.scrollActionPlaylist]}
           activeOpacity={0.8}
-          onPress={handleSpotifyTap}
+          onPress={handleAddToPlaylistTap}
         >
-          <Ionicons name="menu" size={24} color="#000" />
-          <Text style={styles.scrollActionSpotifyText}>Spotify</Text>
+          <Ionicons name="folder-open" size={22} color="#000" />
+          <Text style={styles.scrollActionPlaylistText}>Playlists</Text>
         </TouchableOpacity>
 
         {/* Center Main Card */}
@@ -124,6 +125,16 @@ function SwipeableTrackRow({
             </Text>
             {dateFormatted && <Text style={styles.trackDate}>Saved {dateFormatted}</Text>}
           </View>
+
+          {/* Direct Add to Playlist button */}
+          <TouchableOpacity
+            style={styles.rowAddToPlaylistBtn}
+            onPress={() => onAddToPlaylist(item)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+          >
+            <Ionicons name="folder-open-outline" size={17} color={COLORS.primary} />
+          </TouchableOpacity>
 
           {/* Play / Pause 30s Audio Preview Button */}
           {(item.preview_url || item.previewUrl) && (
@@ -164,9 +175,11 @@ export default function LikedPlaylistModal({
   isLoading = false,
   onRefresh,
   onDeleteTrack,
+  onAddToPlaylist,
 }) {
   const [playingTrackId, setPlayingTrackId] = useState(null);
   const [modalSound, setModalSound] = useState(null);
+  const [trackForPlaylistModal, setTrackForPlaylistModal] = useState(null);
 
   const stopModalAudio = () => {
     if (modalSound) {
@@ -207,13 +220,13 @@ export default function LikedPlaylistModal({
     }
   };
 
-  // Popup when clicking/sliding for Spotify
-  const handleSpotifyPlaylistPress = (item) => {
-    Alert.alert(
-      'Add to Spotify Playlist',
-      `This feature is not yet implemented.\n\nWe're planning for this to allow you to add "${item.name}" to a specific playlist on Spotify.`,
-      [{ text: 'OK', style: 'default' }]
-    );
+  // Trigger Add to Playlist Modal
+  const handleAddToPlaylistAction = (item) => {
+    if (onAddToPlaylist) {
+      onAddToPlaylist(item);
+    } else {
+      setTrackForPlaylistModal(item);
+    }
   };
 
   // Confirm before deleting track from playlist
@@ -240,6 +253,7 @@ export default function LikedPlaylistModal({
 
   const handleClose = () => {
     stopModalAudio();
+    setTrackForPlaylistModal(null);
     onClose();
   };
 
@@ -252,7 +266,7 @@ export default function LikedPlaylistModal({
         isPlaying={isThisPlaying}
         onPlayPreview={handlePlayPreview}
         onDeleteTrack={handleDeleteConfirmation}
-        onSpotifyPlaylistPress={handleSpotifyPlaylistPress}
+        onAddToPlaylist={handleAddToPlaylistAction}
       />
     );
   };
@@ -335,6 +349,14 @@ export default function LikedPlaylistModal({
             keyboardShouldPersistTaps="handled"
           />
         )}
+
+        {/* Modal popup to add song to user's custom playlists with multi-select */}
+        <AddToPlaylistModal
+          visible={Boolean(trackForPlaylistModal)}
+          track={trackForPlaylistModal}
+          onClose={() => setTrackForPlaylistModal(null)}
+          onSuccess={() => setTrackForPlaylistModal(null)}
+        />
       </SafeAreaView>
     </Modal>
   );
@@ -451,6 +473,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
   },
+  scrollActionPlaylist: {
+    backgroundColor: COLORS.primary,
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
+  },
+  scrollActionPlaylistText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: '800',
+  },
   scrollActionSpotify: {
     backgroundColor: COLORS.primary,
     borderTopLeftRadius: 14,
@@ -507,6 +539,17 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 11,
     marginTop: 4,
+  },
+  rowAddToPlaylistBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(29, 185, 84, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(29, 185, 84, 0.25)',
   },
   playBtn: {
     width: 38,

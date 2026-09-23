@@ -142,6 +142,94 @@ function disconnectSpotify(userId) {
   return user;
 }
 
+const inMemoryCustomPlaylists = new Map();
+const inMemoryPlaylistTracks = [];
+
+function getCustomPlaylists(userId, trackId = null) {
+  const list = inMemoryCustomPlaylists.get(userId) || [];
+  return list.map((pl) => {
+    const trackCount = inMemoryPlaylistTracks.filter(
+      (t) => t.userId === userId && t.playlistName === pl.name
+    ).length;
+    const hasTrack = trackId
+      ? inMemoryPlaylistTracks.some(
+          (t) =>
+            t.userId === userId &&
+            t.playlistName === pl.name &&
+            ((t.track.spotify_track_id && t.track.spotify_track_id === trackId) || t.track.id === trackId)
+        )
+      : false;
+    return {
+      ...pl,
+      track_count: trackCount,
+      has_track: hasTrack,
+    };
+  });
+}
+
+function createCustomPlaylist(userId, name) {
+  let list = inMemoryCustomPlaylists.get(userId);
+  if (!list) {
+    list = [];
+    inMemoryCustomPlaylists.set(userId, list);
+  }
+  const clean = name.trim();
+  if (list.some((p) => p.name.toLowerCase() === clean.toLowerCase())) {
+    throw new Error(`Playlist "${clean}" already exists`);
+  }
+  const playlist = {
+    id: `pl-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    name: clean,
+    created_at: new Date().toISOString(),
+    track_count: 0,
+    has_track: false,
+  };
+  list.push(playlist);
+  return playlist;
+}
+
+function deleteCustomPlaylist(userId, name) {
+  const list = inMemoryCustomPlaylists.get(userId) || [];
+  const filtered = list.filter((p) => p.name.toLowerCase() !== name.toLowerCase());
+  inMemoryCustomPlaylists.set(userId, filtered);
+
+  for (let i = inMemoryPlaylistTracks.length - 1; i >= 0; i--) {
+    if (
+      inMemoryPlaylistTracks[i].userId === userId &&
+      inMemoryPlaylistTracks[i].playlistName.toLowerCase() === name.toLowerCase()
+    ) {
+      inMemoryPlaylistTracks.splice(i, 1);
+    }
+  }
+  return true;
+}
+
+function addTrackToCustomPlaylists(userId, track, playlistNames) {
+  const allowed = (inMemoryCustomPlaylists.get(userId) || []).map((p) => p.name);
+  let added = 0;
+  for (const name of playlistNames) {
+    if (!allowed.includes(name)) continue;
+    const trackKey = track.spotify_track_id || track.id;
+    const exists = inMemoryPlaylistTracks.some(
+      (t) =>
+        t.userId === userId &&
+        t.playlistName === name &&
+        (t.track.spotify_track_id === trackKey || t.track.id === trackKey)
+    );
+    if (!exists) {
+      inMemoryPlaylistTracks.push({
+        id: `pl-entry-${Date.now()}-${Math.random()}`,
+        userId,
+        playlistName: name,
+        track,
+        swiped_at: new Date().toISOString(),
+      });
+      added++;
+    }
+  }
+  return added;
+}
+
 module.exports = {
   inMemoryUsers,
   findUserByEmailOrUsername,
@@ -153,4 +241,8 @@ module.exports = {
   updateGenres,
   updateSpotify,
   disconnectSpotify,
+  getCustomPlaylists,
+  createCustomPlaylist,
+  deleteCustomPlaylist,
+  addTrackToCustomPlaylists,
 };

@@ -6,6 +6,7 @@ import {
   Image,
   Dimensions,
   Animated,
+  TouchableOpacity,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +23,7 @@ export default function TrackCard({
   progress = 0,
   likeOpacity = 0,
   nopeOpacity = 0,
+  onAddToPlaylist,
 }) {
   if (!track) return null;
 
@@ -67,6 +69,18 @@ export default function TrackCard({
           {isPlaying ? 'Playing 30s Preview' : 'Preview Paused'}
         </Text>
       </View>
+
+      {/* Add to Playlist button on top right of active card */}
+      {isTopCard && onAddToPlaylist && (
+        <TouchableOpacity
+          style={styles.cardAddToPlaylistBtn}
+          onPress={() => onAddToPlaylist(track)}
+          activeOpacity={0.8}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="folder-open-outline" size={17} color={COLORS.primary} />
+        </TouchableOpacity>
+      )}
 
       {/* Swipe Badges (Visible on Drag) */}
       {isTopCard && (
@@ -185,6 +199,20 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 12,
     fontWeight: '600',
+  },
+  cardAddToPlaylistBtn: {
+    position: 'absolute',
+    top: 18,
+    right: 18,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    zIndex: 10,
   },
   choiceBadge: {
     position: 'absolute',

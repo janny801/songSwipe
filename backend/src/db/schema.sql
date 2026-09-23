@@ -59,9 +59,20 @@ CREATE TABLE IF NOT EXISTS playlists (
     CONSTRAINT unique_user_track_playlist UNIQUE (user_id, track_id, playlist_name)
 );
 
+-- User-created custom playlists defined on profile
+CREATE TABLE IF NOT EXISTS user_custom_playlists (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_user_custom_playlist UNIQUE (user_id, name)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_playlists_user_id ON playlists(user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_track_id ON playlists(track_id);
+CREATE INDEX IF NOT EXISTS idx_playlists_user_name ON playlists(user_id, playlist_name);
+CREATE INDEX IF NOT EXISTS idx_user_custom_playlists_user_id ON user_custom_playlists(user_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_spotify_id ON tracks(spotify_track_id);
 CREATE UNIQUE INDEX IF NOT EXISTS users_display_name_lower_idx ON users (LOWER(display_name));
 CREATE INDEX IF NOT EXISTS idx_users_spotify_id ON users(spotify_id);

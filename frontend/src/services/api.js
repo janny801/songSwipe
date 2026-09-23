@@ -342,4 +342,97 @@ export const api = {
     }
     return data;
   },
+
+  /**
+   * Fetch custom playlists created by user on profile
+   */
+  async getCustomPlaylists(trackId = null) {
+    const query = trackId ? `?trackId=${encodeURIComponent(trackId)}` : '';
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/custom${query}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch custom playlists');
+    }
+    return data.playlists || [];
+  },
+
+  /**
+   * Create a new custom playlist on user's profile
+   */
+  async createCustomPlaylist(name) {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/custom`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ name }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to create custom playlist');
+    }
+    return data.playlist;
+  },
+
+  /**
+   * Delete a custom playlist created on user's profile
+   */
+  async deleteCustomPlaylist(name) {
+    const response = await fetchWithTimeout(
+      `${activeBaseUrl}/api/playlists/custom/${encodeURIComponent(name)}`,
+      {
+        method: 'DELETE',
+        headers: getHeaders(),
+      }
+    );
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to delete custom playlist');
+    }
+    return data;
+  },
+
+  /**
+   * Add a song to multiple user-created playlists (multiselect)
+   */
+  async addToPlaylists({ track, playlistNames }) {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/add-to-playlists`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ track, playlistNames }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to add song to playlists');
+    }
+    return data;
+  },
+
+  /**
+   * Get tracks for a specific custom playlist
+   */
+  async getPlaylistTracks(userId, playlistName) {
+    const params = new URLSearchParams();
+    if (userId) params.append('userId', userId);
+    if (playlistName) params.append('playlistName', playlistName);
+
+    const response = await fetchWithTimeout(
+      `${activeBaseUrl}/api/playlists?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: getHeaders(),
+      }
+    );
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to load playlist tracks');
+    }
+    return data.tracks || [];
+  },
 };
