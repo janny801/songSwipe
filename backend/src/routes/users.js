@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const bcrypt = require('bcryptjs');
 const { pool, getIsConnected } = require('../config/db');
 const { requireAuth, optionalAuth, JWT_SECRET } = require('../middleware/auth');
 const inMemoryStore = require('../config/inMemoryStore');
@@ -673,6 +674,98 @@ router.put('/spotify/sync-settings', optionalAuth, async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to update Spotify sync settings',
+      details: error.message,
+    });
+  }
+});
+
+/**
+ * DELETE /api/users/account
+ * Permanently deletes the user account and all associated data.
+ * Requires password confirmation for password-based accounts.
+ * Complies with Apple App Store Guideline 5.1.1(v).
+ */
+router.delete('/account', optionalAuth, async (req, res) => {
+  const userId = req.user?.userId || req.headers['x-user-id'] || req.body?.userId || req.query?.userId;
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+  }
+
+  const { password } = req.body;
+
+  try {
+    if (getIsConnected()) {
+      const userRes = await pool.query(
+        'SELECT id, password_hash, google_id FROM users WHERE id = $1',
+        [userId]
+      );
+      if (userRes.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'User not found.' });
+      }
+
+      const dbUser = userRes.rows[0];
+
+      // If user has a password set, require password verification
+      if (dbUser.password_hash) {
+        if (!password) {
+          return res.status(400).json({
+            success: false,
+            error: 'Please enter your password to confirm account deletion.',
+          });
+        }
+
+        const isMatch = await bcrypt.compare(password, dbUser.password_hash);
+        if (!isMatch) {
+          return res.status(401).json({
+            success: false,
+            error: 'Incorrect password. Account deletion cancelled.',
+          });
+        }
+      }
+
+      await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+      return res.status(200).json({
+        success: true,
+        message: 'Your account and all associated data have been permanently deleted.',
+      });
+    }
+
+    // In-memory fallback
+    const memUser = inMemoryStore.findUserById(userId);
+    if (!memUser) {
+      return res.status(404).json({ success: false, error: 'User not found.' });
+    }
+
+    if (memUser.password_hash) {
+      if (!password) {
+        return res.status(400).json({
+          success: false,
+          error: 'Please enter your password to confirm account deletion.',
+        });
+      }
+
+      const isMatch = await bcrypt.compare(password, memUser.password_hash);
+      if (!isMatch) {
+        return res.status(401).json({
+          success: false,
+          error: 'Incorrect password. Account deletion cancelled.',
+        });
+      }
+    }
+
+    inMemoryStore.deleteUser(userId);
+    return res.status(200).json({
+      success: true,
+      message: 'Your account and all associated data have been permanently deleted.',
+    });
+  } catch (error) {
+    console.error('Error deleting user account:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to delete account.',
       details: error.message,
     });
   }

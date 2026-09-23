@@ -230,6 +230,17 @@ function addTrackToCustomPlaylists(userId, track, playlistNames) {
   return added;
 }
 
+function deleteUser(userId) {
+  inMemoryUsers.delete(userId);
+  inMemoryCustomPlaylists.delete(userId);
+  for (let i = inMemoryPlaylistTracks.length - 1; i >= 0; i--) {
+    if (inMemoryPlaylistTracks[i].userId === userId) {
+      inMemoryPlaylistTracks.splice(i, 1);
+    }
+  }
+  return true;
+}
+
 module.exports = {
   inMemoryUsers,
   findUserByEmailOrUsername,
@@ -245,4 +256,5 @@ module.exports = {
   createCustomPlaylist,
   deleteCustomPlaylist,
   addTrackToCustomPlaylists,
+  deleteUser,
 };

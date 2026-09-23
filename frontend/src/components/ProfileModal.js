@@ -40,12 +40,19 @@ const AVAILABLE_GENRES = [
 ];
 
 export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
-  const { user, updateUser, logout, refreshUser } = useAuth();
+  const { user, updateUser, logout, refreshUser, deleteAccount } = useAuth();
 
   const [username, setUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+
+  // Delete account state (Apple Guideline 5.1.1v)
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [showDeletePassword, setShowDeletePassword] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState('');
 
   // Genres state
   const [selectedGenres, setSelectedGenres] = useState([]);
@@ -306,6 +313,39 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
         },
       ]
     );
+  };
+
+  const handleInitiateDeleteAccount = () => {
+    setDeletePassword('');
+    setShowDeletePassword(false);
+    setDeleteAccountError('');
+    setShowDeleteAccountModal(true);
+  };
+
+  const handleConfirmDeleteAccount = async () => {
+    if (user?.auth_provider !== 'google' && !deletePassword.trim()) {
+      setDeleteAccountError('Please enter your password to confirm deletion.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    setDeleteAccountError('');
+
+    try {
+      const res = await deleteAccount(deletePassword.trim());
+      if (res && !res.success) {
+        setDeleteAccountError(res.error || 'Failed to delete account.');
+        setIsDeletingAccount(false);
+        return;
+      }
+
+      setShowDeleteAccountModal(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      onClose();
+    } catch (err) {
+      setDeleteAccountError(err.message || 'Failed to delete account.');
+      setIsDeletingAccount(false);
+    }
   };
 
   const handleCreatePlaylist = async () => {
@@ -892,6 +932,16 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
               <Ionicons name="log-out-outline" size={20} color={COLORS.nopeRed} />
               <Text style={styles.signOutText}>Sign Out</Text>
             </TouchableOpacity>
+
+            {/* Delete Account Action (Apple Guideline 5.1.1v) */}
+            <TouchableOpacity
+              style={styles.deleteAccountTriggerBtn}
+              onPress={handleInitiateDeleteAccount}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={15} color="rgba(235, 87, 87, 0.7)" />
+              <Text style={styles.deleteAccountTriggerText}>Delete Account</Text>
+            </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
 
@@ -929,6 +979,92 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
                     <Text style={styles.confirmDeleteText}>Delete</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Account Deletion Confirmation Dialog (Apple Guideline 5.1.1v) */}
+        {showDeleteAccountModal && (
+          <View style={styles.confirmOverlay}>
+            <View style={styles.confirmDialog}>
+              <View style={styles.confirmIconContainer}>
+                <Ionicons name="warning-outline" size={30} color={COLORS.nopeRed} />
+              </View>
+              <Text style={styles.confirmTitle}>Delete Account?</Text>
+              <Text style={styles.confirmMessage}>
+                This action is permanent and cannot be undone. All your saved tracks, custom playlists, and profile data will be permanently wiped.
+              </Text>
+
+              {user?.auth_provider !== 'google' && (
+                <View style={styles.deletePasswordContainer}>
+                  <Text style={styles.deletePasswordLabel}>
+                    Confirm your password to proceed:
+                  </Text>
+                  <View style={styles.deletePasswordInputWrapper}>
+                    <TextInput
+                      style={styles.deletePasswordInput}
+                      placeholder="Enter your password..."
+                      placeholderTextColor={COLORS.textMuted}
+                      secureTextEntry={!showDeletePassword}
+                      value={deletePassword}
+                      onChangeText={(t) => {
+                        setDeletePassword(t);
+                        setDeleteAccountError('');
+                      }}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowDeletePassword((prev) => !prev)}
+                      style={styles.deleteEyeIcon}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons
+                        name={showDeletePassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={18}
+                        color={COLORS.textMuted}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {deleteAccountError ? (
+                <View style={styles.deleteErrorBanner}>
+                  <Ionicons name="alert-circle-outline" size={16} color={COLORS.nopeRed} />
+                  <Text style={styles.deleteErrorText}>{deleteAccountError}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.confirmActions}>
+                <TouchableOpacity
+                  style={styles.confirmCancelBtn}
+                  onPress={() => {
+                    setShowDeleteAccountModal(false);
+                    setDeletePassword('');
+                    setDeleteAccountError('');
+                  }}
+                  disabled={isDeletingAccount}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.confirmCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.confirmDeleteBtn,
+                    (isDeletingAccount || (user?.auth_provider !== 'google' && !deletePassword.trim())) && { opacity: 0.6 },
+                  ]}
+                  onPress={handleConfirmDeleteAccount}
+                  disabled={isDeletingAccount || (user?.auth_provider !== 'google' && !deletePassword.trim())}
+                  activeOpacity={0.8}
+                >
+                  {isDeletingAccount ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.confirmDeleteText}>Delete Forever</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1664,5 +1800,67 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
+  },
+  deleteAccountTriggerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  deleteAccountTriggerText: {
+    color: 'rgba(235, 87, 87, 0.7)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  deletePasswordContainer: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  deletePasswordLabel: {
+    color: '#D0D0D0',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
+    textAlign: 'left',
+  },
+  deletePasswordInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#121212',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 12,
+    height: 46,
+  },
+  deletePasswordInput: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 14,
+    height: '100%',
+  },
+  deleteEyeIcon: {
+    padding: 6,
+  },
+  deleteErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(235, 87, 87, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(235, 87, 87, 0.3)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+    width: '100%',
+    gap: 8,
+  },
+  deleteErrorText: {
+    color: COLORS.nopeRed,
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
   },
 });

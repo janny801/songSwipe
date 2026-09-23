@@ -131,6 +131,22 @@ export function AuthProvider({ children }) {
     }));
   };
 
+  // Delete user account permanently (Apple Guideline 5.1.1v)
+  const deleteAccount = async (password = '') => {
+    setIsLoading(true);
+    try {
+      if (user?.id) {
+        await api.deleteAccount({ password, userId: user.id });
+      }
+      logout();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -143,6 +159,7 @@ export function AuthProvider({ children }) {
         register,
         loginWithGoogle,
         logout,
+        deleteAccount,
         continueAsGuest,
         updateUser,
         refreshUser: checkAuthStatus,

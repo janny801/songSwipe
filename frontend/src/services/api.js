@@ -552,5 +552,25 @@ export const api = {
     }
     return data;
   },
+
+  /**
+   * Permanently delete user account and associated data (Apple Guideline 5.1.1v)
+   */
+  async deleteAccount({ password, userId = null }) {
+    const targetUserId = userId || activeUserId;
+    const query = targetUserId ? `?userId=${encodeURIComponent(targetUserId)}` : '';
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/users/account${query}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+      body: JSON.stringify({ password, userId: targetUserId }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to delete account');
+    }
+    setAuthToken(null);
+    return data;
+  },
 };
 
