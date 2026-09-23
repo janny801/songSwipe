@@ -1,22 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
   Text,
-  Modal,
   TouchableOpacity,
   FlatList,
   Image,
   ActivityIndicator,
   TextInput,
-  KeyboardAvoidingView,
+  Animated,
+  Dimensions,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { COLORS } from '../constants/theme';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+
+WebBrowser.maybeCompleteAuthSession();
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function AddToPlaylistModal({
   visible,
@@ -24,7 +30,7 @@ export default function AddToPlaylistModal({
   onClose,
   onSuccess,
 }) {
-  const { isAuthenticated } = useAuth();
+  const { user, refreshUser } = useAuth();
 
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylists, setSelectedPlaylists] = useState(new Set());
@@ -32,38 +38,100 @@ export default function AddToPlaylistModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [notConnected, setNotConnected] = useState(false);
+  const [needsReauth, setNeedsReauth] = useState(false);
+  const [isConnectingSpotify, setIsConnectingSpotify] = useState(false);
 
-  // Inline "Create New Playlist" input state
+  // Inline "Create New Spotify Playlist" state
   const [showCreateInput, setShowCreateInput] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  const trackId = track?.spotify_track_id || track?.id || track?.track_id || null;
+  // Animation controllers for smooth bottom sheet appearance without native Modal collision
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT * 0.75)).current;
+  const [isRendered, setIsRendered] = useState(false);
 
-  // Load user's custom playlists whenever modal opens
-  const loadPlaylists = useCallback(async () => {
-    if (!isAuthenticated) return;
+  // Handle animate in/out
+  useEffect(() => {
+    if (visible) {
+      setIsRendered(true);
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          damping: 24,
+          stiffness: 280,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else if (isRendered) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: SCREEN_HEIGHT * 0.75,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setIsRendered(false);
+      });
+    }
+  }, [visible, fadeAnim, slideAnim, isRendered]);
+
+  const handleDismiss = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 160,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: SCREEN_HEIGHT * 0.75,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setIsRendered(false);
+      onClose && onClose();
+    });
+  }, [fadeAnim, slideAnim, onClose]);
+
+  // Load playlists created on user's own Spotify account
+  const loadSpotifyPlaylists = useCallback(async () => {
     setIsLoading(true);
     setErrorMsg('');
-    try {
-      const data = await api.getCustomPlaylists(trackId);
-      setPlaylists(data);
+    setNotConnected(false);
+    setNeedsReauth(false);
 
-      // Pre-select playlists that already have the track or keep fresh set
-      const alreadyIn = new Set();
-      data.forEach((pl) => {
-        if (pl.has_track) {
-          alreadyIn.add(pl.name);
-        }
-      });
-      setSelectedPlaylists(alreadyIn);
+    try {
+      const res = await api.getSpotifyPlaylists();
+      if (res.notConnected) {
+        setNotConnected(true);
+        setPlaylists([]);
+      } else if (res.needsReauth) {
+        setNeedsReauth(true);
+        setPlaylists([]);
+      } else if (res.success && Array.isArray(res.playlists)) {
+        setPlaylists(res.playlists);
+      } else {
+        setPlaylists([]);
+      }
     } catch (err) {
-      console.warn('Error fetching custom playlists:', err.message);
-      setErrorMsg('Could not load your playlists. Please try again.');
+      console.warn('Error loading Spotify playlists:', err.message);
+      setErrorMsg(err.message || 'Could not load Spotify playlists');
     } finally {
       setIsLoading(false);
     }
-  }, [isAuthenticated, trackId]);
+  }, []);
 
   useEffect(() => {
     if (visible && track) {
@@ -72,48 +140,71 @@ export default function AddToPlaylistModal({
       setSuccessMsg('');
       setShowCreateInput(false);
       setNewPlaylistName('');
-      loadPlaylists();
+      loadSpotifyPlaylists();
     }
-  }, [visible, track, loadPlaylists]);
+  }, [visible, track, loadSpotifyPlaylists]);
 
-  // Toggle playlist selection
-  const toggleSelect = (name) => {
+  // Handle Spotify Connect / Re-auth directly inside popup
+  const handleConnectSpotify = async () => {
+    setIsConnectingSpotify(true);
+    setErrorMsg('');
+    try {
+      const appReturnUrl = Linking.createURL('spotify-connected');
+      const authUrl = await api.getSpotifyAuthUrl(appReturnUrl);
+
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, appReturnUrl);
+
+      if (result.type === 'success' && result.url) {
+        if (refreshUser) {
+          await refreshUser();
+        }
+        await loadSpotifyPlaylists();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      }
+    } catch (err) {
+      setErrorMsg(err.message || 'Spotify authorization failed');
+    } finally {
+      setIsConnectingSpotify(false);
+    }
+  };
+
+  // Toggle selection of Spotify playlist
+  const toggleSelect = (playlistId) => {
     Haptics.selectionAsync().catch(() => {});
     setErrorMsg('');
     setSelectedPlaylists((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) {
-        next.delete(name);
+      if (next.has(playlistId)) {
+        next.delete(playlistId);
       } else {
-        next.add(name);
+        next.add(playlistId);
       }
       return next;
     });
   };
 
-  // Create playlist inline
-  const handleCreatePlaylist = async () => {
+  // Create playlist on Spotify inline
+  const handleCreateSpotifyPlaylist = async () => {
     const clean = newPlaylistName.trim();
     if (!clean) return;
 
     setIsCreating(true);
     setErrorMsg('');
     try {
-      const created = await api.createCustomPlaylist(clean);
+      const created = await api.createSpotifyPlaylist(clean, false);
       setNewPlaylistName('');
       setShowCreateInput(false);
-      // Add to list and select it
       setPlaylists((prev) => [created, ...prev]);
-      setSelectedPlaylists((prev) => new Set(prev).add(created.name));
+      setSelectedPlaylists((prev) => new Set(prev).add(created.id));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to create playlist');
+      setErrorMsg(err.message || 'Failed to create playlist on Spotify');
     } finally {
       setIsCreating(false);
     }
   };
 
-  // Submit adding to selected playlists
+  // Submit adding song to selected Spotify playlists
   const handleConfirm = async () => {
     if (selectedPlaylists.size === 0) return;
 
@@ -122,28 +213,28 @@ export default function AddToPlaylistModal({
     setSuccessMsg('');
 
     try {
-      const playlistNames = Array.from(selectedPlaylists);
-      const res = await api.addToPlaylists({ track, playlistNames });
+      const playlistIds = Array.from(selectedPlaylists);
+      const res = await api.addTrackToSpotifyPlaylists({ track, playlistIds });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setSuccessMsg(
-        `Added "${track.name}" to ${playlistNames.length} playlist${
-          playlistNames.length > 1 ? 's' : ''
+        `Added "${track.name}" to ${playlistIds.length} Spotify playlist${
+          playlistIds.length > 1 ? 's' : ''
         }!`
       );
 
       setTimeout(() => {
-        onSuccess && onSuccess(playlistNames);
-        onClose();
+        onSuccess && onSuccess(playlistIds);
+        handleDismiss();
       }, 700);
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to add to playlists');
+      setErrorMsg(err.message || 'Failed to add song to Spotify playlists');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (!visible || !track) return null;
+  if (!isRendered || !track) return null;
 
   const selectedCount = selectedPlaylists.size;
   const albumArt =
@@ -152,158 +243,223 @@ export default function AddToPlaylistModal({
     'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400';
 
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <View style={styles.absoluteOverlay} pointerEvents={visible ? 'auto' : 'none'}>
+      {/* Animated Backdrop */}
+      <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFillObject}
+          activeOpacity={1}
+          onPress={handleDismiss}
+        />
+      </Animated.View>
+
+      {/* Animated Bottom Sheet */}
+      <Animated.View
+        style={[
+          styles.sheetContainer,
+          {
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
       >
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-
-        <View style={styles.sheetContainer}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.headerIndicator} />
-            <View style={styles.headerTitleRow}>
-              <View style={styles.headerIconCircle}>
-                <Ionicons name="folder-open" size={18} color={COLORS.primary} />
-              </View>
-              <Text style={styles.headerTitle}>Add to Playlists</Text>
-              <TouchableOpacity
-                style={styles.closeBtn}
-                onPress={onClose}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="close" size={22} color={COLORS.textSecondary} />
-              </TouchableOpacity>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerIndicator} />
+          <View style={styles.headerTitleRow}>
+            <View style={styles.headerIconCircle}>
+              <FontAwesome name="spotify" size={20} color="#1DB954" />
             </View>
-          </View>
-
-          {/* Selected Track Pill / Preview */}
-          <View style={styles.trackCard}>
-            <Image source={{ uri: albumArt }} style={styles.trackThumb} />
-            <View style={styles.trackInfo}>
-              <Text style={styles.trackTitle} numberOfLines={1}>
-                {track.name}
-              </Text>
-              <Text style={styles.trackArtist} numberOfLines={1}>
-                {track.artist}
-              </Text>
+            <View style={styles.headerTitlesBox}>
+              <Text style={styles.headerTitle}>Add to Spotify Playlists</Text>
+              <Text style={styles.headerSubtitle}>Playlists created on your Spotify account</Text>
             </View>
-            <View style={styles.multiselectBadge}>
-              <Text style={styles.multiselectBadgeText}>Multiselect</Text>
-            </View>
-          </View>
-
-          {/* Status Banners */}
-          {errorMsg ? (
-            <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={16} color={COLORS.nopeRed} />
-              <Text style={styles.errorText}>{errorMsg}</Text>
-            </View>
-          ) : null}
-
-          {successMsg ? (
-            <View style={styles.successBanner}>
-              <Ionicons name="checkmark-circle" size={16} color={COLORS.primary} />
-              <Text style={styles.successText}>{successMsg}</Text>
-            </View>
-          ) : null}
-
-          {/* Inline Create Playlist Box */}
-          {showCreateInput ? (
-            <View style={styles.createBox}>
-              <TextInput
-                style={styles.createInput}
-                placeholder="Playlist name (e.g. Chill Beats)"
-                placeholderTextColor={COLORS.textMuted}
-                value={newPlaylistName}
-                onChangeText={setNewPlaylistName}
-                autoFocus={true}
-                maxLength={50}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.createConfirmBtn,
-                  (!newPlaylistName.trim() || isCreating) && { opacity: 0.5 },
-                ]}
-                onPress={handleCreatePlaylist}
-                disabled={!newPlaylistName.trim() || isCreating}
-              >
-                {isCreating ? (
-                  <ActivityIndicator size="small" color="#000" />
-                ) : (
-                  <Text style={styles.createConfirmBtnText}>Create</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.createCancelBtn}
-                onPress={() => {
-                  setShowCreateInput(false);
-                  setNewPlaylistName('');
-                }}
-              >
-                <Ionicons name="close" size={18} color={COLORS.textMuted} />
-              </TouchableOpacity>
-            </View>
-          ) : (
             <TouchableOpacity
-              style={styles.newPlaylistTrigger}
-              onPress={() => setShowCreateInput(true)}
-              activeOpacity={0.7}
+              style={styles.closeBtn}
+              onPress={handleDismiss}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <Ionicons name="add-circle" size={20} color={COLORS.primary} />
-              <Text style={styles.newPlaylistTriggerText}>Create New Playlist</Text>
+              <Ionicons name="close" size={22} color={COLORS.textSecondary} />
             </TouchableOpacity>
-          )}
+          </View>
+        </View>
 
-          {/* Playlists List */}
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator color={COLORS.primary} />
-              <Text style={styles.loadingText}>Loading your playlists...</Text>
+        {/* Selected Track Pill / Preview */}
+        <View style={styles.trackCard}>
+          <Image source={{ uri: albumArt }} style={styles.trackThumb} />
+          <View style={styles.trackInfo}>
+            <Text style={styles.trackTitle} numberOfLines={1}>
+              {track.name}
+            </Text>
+            <Text style={styles.trackArtist} numberOfLines={1}>
+              {track.artist}
+            </Text>
+          </View>
+          <View style={styles.multiselectBadge}>
+            <Text style={styles.multiselectBadgeText}>Multiselect</Text>
+          </View>
+        </View>
+
+        {/* Status Banners */}
+        {errorMsg ? (
+          <View style={styles.errorBanner}>
+            <Ionicons name="alert-circle" size={16} color={COLORS.nopeRed} />
+            <Text style={styles.errorText}>{errorMsg}</Text>
+          </View>
+        ) : null}
+
+        {successMsg ? (
+          <View style={styles.successBanner}>
+            <Ionicons name="checkmark-circle" size={16} color={COLORS.primary} />
+            <Text style={styles.successText}>{successMsg}</Text>
+          </View>
+        ) : null}
+
+        {/* Spotify Account Not Connected State */}
+        {notConnected ? (
+          <View style={styles.emptyContainer}>
+            <View style={styles.spotifyLargeCircle}>
+              <FontAwesome name="spotify" size={36} color="#000" />
             </View>
-          ) : playlists.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="albums-outline" size={38} color={COLORS.textMuted} />
-              <Text style={styles.emptyTitle}>No custom playlists yet</Text>
-              <Text style={styles.emptySubtitle}>
-                Create a playlist using the button above to start organizing your favorite songs.
-              </Text>
-            </View>
-          ) : (
-            <FlatList
-              data={playlists}
-              keyExtractor={(item) => item.id || item.name}
-              contentContainerStyle={styles.listContent}
-              keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => {
-                const isSelected = selectedPlaylists.has(item.name);
-                return (
-                  <TouchableOpacity
-                    style={[styles.playlistRow, isSelected && styles.playlistRowSelected]}
-                    onPress={() => toggleSelect(item.name)}
-                    activeOpacity={0.7}
-                  >
-                    <View
-                      style={[
-                        styles.playlistIconBox,
-                        isSelected && styles.playlistIconBoxSelected,
-                      ]}
+            <Text style={styles.emptyTitle}>Spotify Account Not Connected</Text>
+            <Text style={styles.emptySubtitle}>
+              Link your Spotify account to choose from playlists you've created on Spotify and add this song directly.
+            </Text>
+            <TouchableOpacity
+              style={[styles.connectSpotifyBtn, isConnectingSpotify && { opacity: 0.7 }]}
+              onPress={handleConnectSpotify}
+              disabled={isConnectingSpotify}
+              activeOpacity={0.85}
+            >
+              {isConnectingSpotify ? (
+                <ActivityIndicator color="#000" />
+              ) : (
+                <View style={styles.btnRow}>
+                  <FontAwesome name="spotify" size={18} color="#000" />
+                  <Text style={styles.connectSpotifyBtnText}>Connect Spotify Account</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : needsReauth ? (
+          /* Spotify Re-auth Required for Playlist Permissions */
+          <View style={styles.emptyContainer}>
+            <Ionicons name="shield-checkmark-outline" size={36} color={COLORS.primary} />
+            <Text style={styles.emptyTitle}>Playlist Permissions Needed</Text>
+            <Text style={styles.emptySubtitle}>
+              SongSwipe needs permission to read and add songs to your personal Spotify playlists.
+            </Text>
+            <TouchableOpacity
+              style={[styles.connectSpotifyBtn, isConnectingSpotify && { opacity: 0.7 }]}
+              onPress={handleConnectSpotify}
+              disabled={isConnectingSpotify}
+              activeOpacity={0.85}
+            >
+              {isConnectingSpotify ? (
+                <ActivityIndicator color="#000" />
+              ) : (
+                <View style={styles.btnRow}>
+                  <FontAwesome name="spotify" size={18} color="#000" />
+                  <Text style={styles.connectSpotifyBtnText}>Grant Playlist Permissions</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            {/* Inline Create Spotify Playlist Box */}
+            {showCreateInput ? (
+              <View style={styles.createBox}>
+                <TextInput
+                  style={styles.createInput}
+                  placeholder="New Spotify playlist name..."
+                  placeholderTextColor={COLORS.textMuted}
+                  value={newPlaylistName}
+                  onChangeText={setNewPlaylistName}
+                  autoFocus={true}
+                  maxLength={60}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.createConfirmBtn,
+                    (!newPlaylistName.trim() || isCreating) && { opacity: 0.5 },
+                  ]}
+                  onPress={handleCreateSpotifyPlaylist}
+                  disabled={!newPlaylistName.trim() || isCreating}
+                >
+                  {isCreating ? (
+                    <ActivityIndicator size="small" color="#000" />
+                  ) : (
+                    <Text style={styles.createConfirmBtnText}>Create</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.createCancelBtn}
+                  onPress={() => {
+                    setShowCreateInput(false);
+                    setNewPlaylistName('');
+                  }}
+                >
+                  <Ionicons name="close" size={18} color={COLORS.textMuted} />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.newPlaylistTrigger}
+                onPress={() => setShowCreateInput(true)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="add-circle" size={20} color={COLORS.primary} />
+                <Text style={styles.newPlaylistTriggerText}>Create New Spotify Playlist</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Playlists List */}
+            {isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator color={COLORS.primary} />
+                <Text style={styles.loadingText}>Loading your Spotify playlists...</Text>
+              </View>
+            ) : playlists.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="musical-notes-outline" size={36} color={COLORS.textMuted} />
+                <Text style={styles.emptyTitle}>No created playlists found</Text>
+                <Text style={styles.emptySubtitle}>
+                  You don't have any playlists created on your Spotify account yet. Create one above to get started!
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={playlists}
+                keyExtractor={(item) => String(item.id)}
+                contentContainerStyle={styles.listContent}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => {
+                  const isSelected = selectedPlaylists.has(item.id);
+                  return (
+                    <TouchableOpacity
+                      style={[styles.playlistRow, isSelected && styles.playlistRowSelected]}
+                      onPress={() => toggleSelect(item.id)}
+                      activeOpacity={0.7}
                     >
-                      <Ionicons
-                        name="musical-notes"
-                        size={18}
-                        color={isSelected ? '#000' : COLORS.textSecondary}
-                      />
-                    </View>
+                      {/* Playlist Artwork or Default Icon */}
+                      {item.image_url ? (
+                        <Image source={{ uri: item.image_url }} style={styles.playlistThumb} />
+                      ) : (
+                        <View
+                          style={[
+                            styles.playlistIconBox,
+                            isSelected && styles.playlistIconBoxSelected,
+                          ]}
+                        >
+                          <Ionicons
+                            name="musical-notes"
+                            size={18}
+                            color={isSelected ? '#000' : COLORS.textSecondary}
+                          />
+                        </View>
+                      )}
 
-                    <View style={styles.playlistRowInfo}>
-                      <View style={styles.playlistNameRow}>
+                      <View style={styles.playlistRowInfo}>
                         <Text
                           style={[
                             styles.playlistName,
@@ -313,92 +469,93 @@ export default function AddToPlaylistModal({
                         >
                           {item.name}
                         </Text>
-                        {item.has_track && (
-                          <View style={styles.hasTrackBadge}>
-                            <Text style={styles.hasTrackBadgeText}>Added</Text>
-                          </View>
+                        <Text style={styles.playlistCount}>
+                          {item.track_count || 0} track{(item.track_count || 0) === 1 ? '' : 's'} • Created by you
+                        </Text>
+                      </View>
+
+                      {/* Multiselect Checkbox */}
+                      <View
+                        style={[
+                          styles.checkbox,
+                          isSelected && styles.checkboxSelected,
+                        ]}
+                      >
+                        {isSelected && (
+                          <Ionicons name="checkmark" size={16} color="#000" />
                         )}
                       </View>
-                      <Text style={styles.playlistCount}>
-                        {item.track_count || 0} song{(item.track_count || 0) === 1 ? '' : 's'}
-                      </Text>
-                    </View>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
 
-                    {/* Multiselect Checkbox */}
-                    <View
+            {/* Bottom Confirmation Button */}
+            <View style={styles.footer}>
+              <TouchableOpacity
+                style={[
+                  styles.confirmBtn,
+                  (selectedCount === 0 || isSubmitting) && styles.confirmBtnDisabled,
+                ]}
+                onPress={handleConfirm}
+                disabled={selectedCount === 0 || isSubmitting}
+                activeOpacity={0.8}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <View style={styles.confirmBtnRow}>
+                    <FontAwesome
+                      name="spotify"
+                      size={18}
+                      color={selectedCount > 0 ? '#000' : COLORS.textMuted}
+                    />
+                    <Text
                       style={[
-                        styles.checkbox,
-                        isSelected && styles.checkboxSelected,
+                        styles.confirmBtnText,
+                        selectedCount === 0 && styles.confirmBtnTextDisabled,
                       ]}
                     >
-                      {isSelected && (
-                        <Ionicons name="checkmark" size={16} color="#000" />
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          )}
-
-          {/* Bottom Confirmation Button */}
-          <View style={styles.footer}>
-            <TouchableOpacity
-              style={[
-                styles.confirmBtn,
-                (selectedCount === 0 || isSubmitting) && styles.confirmBtnDisabled,
-              ]}
-              onPress={handleConfirm}
-              disabled={selectedCount === 0 || isSubmitting}
-              activeOpacity={0.8}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color="#000" />
-              ) : (
-                <View style={styles.confirmBtnRow}>
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={20}
-                    color={selectedCount > 0 ? '#000' : COLORS.textMuted}
-                  />
-                  <Text
-                    style={[
-                      styles.confirmBtnText,
-                      selectedCount === 0 && styles.confirmBtnTextDisabled,
-                    ]}
-                  >
-                    {selectedCount === 0
-                      ? 'Select Playlists'
-                      : `Add to ${selectedCount} Playlist${selectedCount > 1 ? 's' : ''}`}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+                      {selectedCount === 0
+                        ? 'Select Spotify Playlists'
+                        : `Add to ${selectedCount} Spotify Playlist${selectedCount > 1 ? 's' : ''}`}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+  absoluteOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
     justifyContent: 'flex-end',
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
   },
   sheetContainer: {
     backgroundColor: '#161616',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    maxHeight: '80%',
-    minHeight: 420,
+    maxHeight: SCREEN_HEIGHT * 0.78,
+    minHeight: 440,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 20,
   },
   header: {
     paddingHorizontal: 20,
@@ -411,38 +568,44 @@ const styles = StyleSheet.create({
     width: 38,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
     alignSelf: 'center',
     marginBottom: 12,
   },
   headerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
   headerIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: 'rgba(29, 185, 84, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
-  headerTitle: {
+  headerTitlesBox: {
     flex: 1,
-    fontSize: 18,
+  },
+  headerTitle: {
+    fontSize: 17,
     fontWeight: '700',
     color: COLORS.textPrimary,
   },
+  headerSubtitle: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
   closeBtn: {
-    padding: 4,
+    padding: 6,
   },
   trackCard: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 16,
-    marginTop: 14,
+    marginTop: 12,
     marginBottom: 10,
     padding: 10,
     backgroundColor: '#1F1F1F',
@@ -571,8 +734,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1E1E1E',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 14,
     marginBottom: 8,
     borderWidth: 1,
@@ -582,10 +745,17 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     backgroundColor: 'rgba(29, 185, 84, 0.08)',
   },
+  playlistThumb: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: '#282828',
+    marginRight: 12,
+  },
   playlistIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+    width: 42,
+    height: 42,
+    borderRadius: 8,
     backgroundColor: '#282828',
     alignItems: 'center',
     justifyContent: 'center',
@@ -598,34 +768,17 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 10,
   },
-  playlistNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
   playlistName: {
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.textPrimary,
-    flexShrink: 1,
   },
   playlistNameSelected: {
     color: COLORS.primary,
     fontWeight: '700',
   },
-  hasTrackBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  hasTrackBadgeText: {
-    color: COLORS.textMuted,
-    fontSize: 10,
-    fontWeight: '600',
-  },
   playlistCount: {
-    fontSize: 12,
+    fontSize: 11,
     color: COLORS.textMuted,
     marginTop: 2,
   },
@@ -643,7 +796,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   loadingContainer: {
-    padding: 30,
+    padding: 36,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
@@ -656,20 +809,45 @@ const styles = StyleSheet.create({
     padding: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 12,
+  },
+  spotifyLargeCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
   },
   emptyTitle: {
     color: COLORS.textPrimary,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
-    marginTop: 4,
   },
   emptySubtitle: {
     color: COLORS.textSecondary,
-    fontSize: 12,
+    fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
     paddingHorizontal: 20,
+  },
+  connectSpotifyBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginTop: 8,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  connectSpotifyBtnText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '700',
   },
   footer: {
     paddingHorizontal: 16,

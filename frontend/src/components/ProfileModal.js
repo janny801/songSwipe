@@ -69,10 +69,17 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
     if (!user) return;
     setIsLoadingPlaylists(true);
     try {
+      if (user.spotify_id) {
+        const spotifyData = await api.getSpotifyPlaylists();
+        if (spotifyData.success && Array.isArray(spotifyData.playlists)) {
+          setPlaylists(spotifyData.playlists);
+          return;
+        }
+      }
       const data = await api.getCustomPlaylists();
       setPlaylists(data);
     } catch (err) {
-      console.warn('Error loading custom playlists:', err.message);
+      console.warn('Error loading playlists:', err.message);
     } finally {
       setIsLoadingPlaylists(false);
     }
@@ -264,11 +271,19 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
     }
     setIsCreatingPlaylist(true);
     try {
-      const res = await api.createCustomPlaylist(clean);
-      setNewPlaylistName('');
-      setShowCreatePlaylist(false);
-      setPlaylists((prev) => [res, ...prev]);
-      setPlaylistSuccessMessage(`Playlist "${res.name}" created!`);
+      if (user?.spotify_id) {
+        const res = await api.createSpotifyPlaylist(clean, false);
+        setNewPlaylistName('');
+        setShowCreatePlaylist(false);
+        setPlaylists((prev) => [res, ...prev]);
+        setPlaylistSuccessMessage(`Spotify Playlist "${res.name}" created!`);
+      } else {
+        const res = await api.createCustomPlaylist(clean);
+        setNewPlaylistName('');
+        setShowCreatePlaylist(false);
+        setPlaylists((prev) => [res, ...prev]);
+        setPlaylistSuccessMessage(`Playlist "${res.name}" created!`);
+      }
     } catch (err) {
       setPlaylistErrorMessage(err.message || 'Failed to create playlist.');
     } finally {
@@ -575,21 +590,39 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
                     </View>
                   </View>
 
-                  <TouchableOpacity
-                    style={[styles.disconnectSpotifyBtn, isDisconnectingSpotify && { opacity: 0.7 }]}
-                    onPress={handleDisconnectSpotify}
-                    disabled={isDisconnectingSpotify}
-                    activeOpacity={0.8}
-                  >
-                    {isDisconnectingSpotify ? (
-                      <ActivityIndicator size="small" color={COLORS.nopeRed} />
-                    ) : (
-                      <View style={styles.saveBtnRow}>
-                        <Ionicons name="unlink-outline" size={16} color={COLORS.nopeRed} />
-                        <Text style={styles.disconnectSpotifyText}>Disconnect</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
+                  <View style={styles.spotifyButtonsRow}>
+                    <TouchableOpacity
+                      style={[styles.reconnectSpotifyBtn, isConnectingSpotify && { opacity: 0.7 }]}
+                      onPress={handleConnectSpotify}
+                      disabled={isConnectingSpotify}
+                      activeOpacity={0.8}
+                    >
+                      {isConnectingSpotify ? (
+                        <ActivityIndicator size="small" color="#000" />
+                      ) : (
+                        <View style={styles.saveBtnRow}>
+                          <Ionicons name="shield-checkmark" size={15} color="#000" />
+                          <Text style={styles.reconnectSpotifyText}>Update Permissions</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.disconnectSpotifyBtn, isDisconnectingSpotify && { opacity: 0.7 }]}
+                      onPress={handleDisconnectSpotify}
+                      disabled={isDisconnectingSpotify}
+                      activeOpacity={0.8}
+                    >
+                      {isDisconnectingSpotify ? (
+                        <ActivityIndicator size="small" color={COLORS.nopeRed} />
+                      ) : (
+                        <View style={styles.saveBtnRow}>
+                          <Ionicons name="unlink-outline" size={15} color={COLORS.nopeRed} />
+                          <Text style={styles.disconnectSpotifyText}>Disconnect</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ) : (
                 <TouchableOpacity
@@ -1132,7 +1165,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  spotifyButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  reconnectSpotifyBtn: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reconnectSpotifyText: {
+    color: '#000',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   disconnectSpotifyBtn: {
+    flex: 1,
     backgroundColor: 'rgba(233, 20, 41, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(233, 20, 41, 0.25)',

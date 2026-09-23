@@ -435,4 +435,54 @@ export const api = {
     }
     return data.tracks || [];
   },
+
+  /**
+   * Fetch playlists that user created on their Spotify account
+   */
+  async getSpotifyPlaylists() {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/spotify`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to load Spotify playlists');
+    }
+    return data;
+  },
+
+  /**
+   * Add a track to one or more user-created Spotify playlists
+   */
+  async addTrackToSpotifyPlaylists({ track, playlistIds }) {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/spotify/add`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ track, playlistIds }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to add song to Spotify playlists');
+    }
+    return data;
+  },
+
+  /**
+   * Create a new playlist on user's Spotify account
+   */
+  async createSpotifyPlaylist(name, isPublic = false) {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/spotify/create`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ name, isPublic }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to create playlist on Spotify');
+    }
+    return data.playlist;
+  },
 };

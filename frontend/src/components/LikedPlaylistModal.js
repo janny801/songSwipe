@@ -43,20 +43,20 @@ function SwipeableTrackRow({
 
   const handleScrollEndDrag = (e) => {
     const offsetX = e.nativeEvent.contentOffset.x;
-    if (offsetX <= 15) {
-      // Swiped right fully -> Trigger Add to Playlist Modal
+    if (offsetX <= 40) {
+      // Swiped right -> Trigger Add to Playlist Modal
       Haptics.selectionAsync().catch(() => {});
       setTimeout(() => {
         scrollRef.current?.scrollTo({ x: ACTION_WIDTH, animated: true });
         onAddToPlaylist(item);
-      }, 150);
-    } else if (offsetX >= ACTION_WIDTH * 2 - 15) {
-      // Swiped left fully -> Trigger Delete
+      }, 100);
+    } else if (offsetX >= ACTION_WIDTH * 2 - 40) {
+      // Swiped left -> Trigger Delete
       Haptics.selectionAsync().catch(() => {});
       setTimeout(() => {
         scrollRef.current?.scrollTo({ x: ACTION_WIDTH, animated: true });
         onDeleteTrack(item);
-      }, 150);
+      }, 100);
     }
   };
 
@@ -220,13 +220,9 @@ export default function LikedPlaylistModal({
     }
   };
 
-  // Trigger Add to Playlist Modal
+  // Trigger Add to Playlist Modal directly inside this view
   const handleAddToPlaylistAction = (item) => {
-    if (onAddToPlaylist) {
-      onAddToPlaylist(item);
-    } else {
-      setTrackForPlaylistModal(item);
-    }
+    setTrackForPlaylistModal(item);
   };
 
   // Confirm before deleting track from playlist

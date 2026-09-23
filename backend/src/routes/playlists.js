@@ -1,8 +1,86 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const { pool, getIsConnected } = require('../config/db');
 const { optionalAuth, requireAuth } = require('../middleware/auth');
 const sharedInMemoryStore = require('../config/inMemoryStore');
+
+/**
+ * Helper to retrieve a valid Spotify access token for a user,
+ * automatically refreshing expired tokens using spotify_refresh_token
+ */
+async function getValidSpotifyAccessToken(userId) {
+  if (!getIsConnected()) {
+    const user = sharedInMemoryStore.findUserById(userId);
+    if (!user || !user.spotify_id || !user.spotify_access_token) {
+      return null;
+    }
+    return {
+      accessToken: user.spotify_access_token,
+      spotifyId: user.spotify_id,
+    };
+  }
+
+  const result = await pool.query(
+    `SELECT spotify_id, spotify_access_token, spotify_refresh_token, spotify_token_expires_at
+     FROM users
+     WHERE id = $1`,
+    [userId]
+  );
+
+  const user = result.rows[0];
+  if (!user || !user.spotify_id || !user.spotify_access_token) {
+    return null;
+  }
+
+  let accessToken = user.spotify_access_token;
+  const expiresAt = user.spotify_token_expires_at ? new Date(user.spotify_token_expires_at) : null;
+  const now = new Date();
+
+  // Refresh if token expires in less than 60 seconds (or is already expired)
+  if (expiresAt && now.getTime() >= expiresAt.getTime() - 60000 && user.spotify_refresh_token) {
+    try {
+      const clientId = process.env.CLIENT_ID || process.env.SPOTIFY_CLIENT_ID;
+      const clientSecret = process.env.CLIENT_SECRET || process.env.SPOTIFY_CLIENT_SECRET;
+      const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+      const response = await axios.post(
+        'https://accounts.spotify.com/api/token',
+        new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: user.spotify_refresh_token,
+        }).toString(),
+        {
+          headers: {
+            Authorization: `Basic ${authHeader}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        }
+      );
+
+      accessToken = response.data.access_token;
+      const newExpiresAt = new Date(Date.now() + (response.data.expires_in || 3600) * 1000);
+      const newRefreshToken = response.data.refresh_token || user.spotify_refresh_token;
+
+      await pool.query(
+        `UPDATE users
+         SET spotify_access_token = $1,
+             spotify_refresh_token = $2,
+             spotify_token_expires_at = $3,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $4`,
+        [accessToken, newRefreshToken, newExpiresAt, userId]
+      );
+    } catch (refreshErr) {
+      console.warn('Failed to refresh Spotify access token:', refreshErr.response?.data || refreshErr.message);
+    }
+  }
+
+  return {
+    accessToken,
+    spotifyId: user.spotify_id,
+  };
+}
 
 // In-memory fallback store when PostgreSQL is not yet running
 const inMemoryStore = {
@@ -626,6 +704,288 @@ router.post('/add-to-playlists', requireAuth, async (req, res) => {
     });
   } finally {
     client.release();
+  }
+});
+
+/**
+ * GET /api/playlists/spotify
+ * Retrieve playlists that the user created on their own Spotify account
+ */
+router.get('/spotify', requireAuth, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const spotifyAuth = await getValidSpotifyAccessToken(userId);
+    if (!spotifyAuth || !spotifyAuth.spotifyId || !spotifyAuth.accessToken) {
+      return res.status(200).json({
+        success: false,
+        notConnected: true,
+        error: 'Spotify account not connected. Please connect your Spotify account in your profile.',
+        playlists: [],
+      });
+    }
+
+    // Fetch user playlists from Spotify Web API
+    const spotifyRes = await axios.get('https://api.spotify.com/v1/me/playlists?limit=50', {
+      headers: {
+        Authorization: `Bearer ${spotifyAuth.accessToken}`,
+      },
+    });
+
+    const allPlaylists = spotifyRes.data.items || [];
+
+    // Filter to ONLY playlists created by the user on their own Spotify account
+    const userOwnedPlaylists = allPlaylists
+      .filter((pl) => pl && pl.owner && pl.owner.id === spotifyAuth.spotifyId)
+      .map((pl) => ({
+        id: pl.id,
+        name: pl.name,
+        description: pl.description || '',
+        track_count: pl.tracks?.total || 0,
+        image_url: pl.images?.[0]?.url || null,
+        owner_id: pl.owner?.id,
+        owner_name: pl.owner?.display_name || pl.owner?.id,
+        is_public: pl.public,
+        collaborative: pl.collaborative,
+      }));
+
+    return res.status(200).json({
+      success: true,
+      spotifyId: spotifyAuth.spotifyId,
+      total: userOwnedPlaylists.length,
+      playlists: userOwnedPlaylists,
+    });
+  } catch (error) {
+    const status = error.response?.status;
+    const errorData = error.response?.data?.error;
+    console.error('Error fetching Spotify playlists:', status, errorData || error.message);
+
+    // If 403 Insufficient client scope, user needs to re-authorize with playlist-read-private scope
+    if (status === 403 || errorData?.message?.includes('scope')) {
+      return res.status(200).json({
+        success: false,
+        needsReauth: true,
+        error: 'Spotify playlist permissions are required. Please tap Reconnect Spotify to grant playlist access.',
+        playlists: [],
+      });
+    }
+
+    if (status === 401) {
+      return res.status(200).json({
+        success: false,
+        needsReauth: true,
+        error: 'Spotify authorization expired. Please reconnect your Spotify account.',
+        playlists: [],
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch playlists from Spotify',
+      details: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/playlists/spotify/add
+ * Add a track to one or multiple playlists that the user created on their Spotify account
+ */
+router.post('/spotify/add', requireAuth, async (req, res) => {
+  const userId = req.user.userId;
+  const { track, playlistIds } = req.body;
+
+  if (!track || (!track.spotify_track_id && !track.id)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Missing track data in request body',
+    });
+  }
+
+  if (!Array.isArray(playlistIds) || playlistIds.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'Please select at least one Spotify playlist to add to',
+    });
+  }
+
+  try {
+    const spotifyAuth = await getValidSpotifyAccessToken(userId);
+    if (!spotifyAuth || !spotifyAuth.spotifyId || !spotifyAuth.accessToken) {
+      return res.status(401).json({
+        success: false,
+        notConnected: true,
+        error: 'Spotify account not connected. Please connect your Spotify account in your profile.',
+      });
+    }
+
+    // Format Spotify track URI
+    const rawTrackId = track.spotify_track_id || track.id;
+    const trackUri = rawTrackId.startsWith('spotify:track:')
+      ? rawTrackId
+      : `spotify:track:${rawTrackId}`;
+
+    const successfulAdds = [];
+    const errors = [];
+
+    // Add track to each selected Spotify playlist
+    for (const plId of playlistIds) {
+      try {
+        // Verify playlist belongs to user
+        const plCheck = await axios.get(`https://api.spotify.com/v1/playlists/${plId}`, {
+          headers: { Authorization: `Bearer ${spotifyAuth.accessToken}` },
+        });
+
+        if (plCheck.data?.owner?.id !== spotifyAuth.spotifyId) {
+          errors.push({ playlistId: plId, error: 'You do not own this playlist on Spotify.' });
+          continue;
+        }
+
+        // Add track to Spotify playlist
+        await axios.post(
+          `https://api.spotify.com/v1/playlists/${plId}/tracks`,
+          { uris: [trackUri] },
+          {
+            headers: {
+              Authorization: `Bearer ${spotifyAuth.accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        successfulAdds.push({
+          id: plId,
+          name: plCheck.data.name,
+        });
+
+        // Also sync locally to `playlists` table so local records stay in sync
+        if (getIsConnected()) {
+          try {
+            const trackResult = await pool.query(
+              `INSERT INTO tracks (spotify_track_id, name, artist, album, album_art_url, preview_url, duration_ms)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               ON CONFLICT (spotify_track_id) DO UPDATE SET
+                 name = EXCLUDED.name,
+                 artist = EXCLUDED.artist,
+                 album = EXCLUDED.album,
+                 album_art_url = EXCLUDED.album_art_url,
+                 preview_url = COALESCE(EXCLUDED.preview_url, tracks.preview_url),
+                 duration_ms = EXCLUDED.duration_ms
+               RETURNING id`,
+              [
+                rawTrackId,
+                track.name || 'Unknown Track',
+                track.artist || 'Unknown Artist',
+                track.album || '',
+                track.album_art_url || track.albumArtUrl || '',
+                track.preview_url || track.previewUrl || null,
+                track.duration_ms || track.durationMs || 0,
+              ]
+            );
+
+            await pool.query(
+              `INSERT INTO playlists (user_id, track_id, playlist_name, spotify_playlist_id)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (user_id, track_id, playlist_name) DO UPDATE SET swiped_at = CURRENT_TIMESTAMP`,
+              [userId, trackResult.rows[0].id, plCheck.data.name, plId]
+            );
+          } catch (dbErr) {
+            console.warn('Could not sync track locally for Spotify playlist:', dbErr.message);
+          }
+        }
+      } catch (plErr) {
+        console.error(`Error adding track to Spotify playlist ${plId}:`, plErr.response?.data || plErr.message);
+        errors.push({
+          playlistId: plId,
+          error: plErr.response?.data?.error?.message || plErr.message,
+        });
+      }
+    }
+
+    if (successfulAdds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: errors[0]?.error || 'Failed to add track to any Spotify playlist',
+        details: errors,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      addedCount: successfulAdds.length,
+      playlists: successfulAdds,
+      message: `Added "${track.name}" to ${successfulAdds.length} Spotify playlist${successfulAdds.length > 1 ? 's' : ''}!`,
+    });
+  } catch (error) {
+    console.error('Error in /api/playlists/spotify/add:', error.response?.data || error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to add track to Spotify playlists',
+      details: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/playlists/spotify/create
+ * Create a new playlist directly on the user's Spotify account
+ */
+router.post('/spotify/create', requireAuth, async (req, res) => {
+  const userId = req.user.userId;
+  const { name, isPublic = false } = req.body;
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({
+      success: false,
+      error: 'Playlist name cannot be empty',
+    });
+  }
+
+  try {
+    const spotifyAuth = await getValidSpotifyAccessToken(userId);
+    if (!spotifyAuth || !spotifyAuth.spotifyId || !spotifyAuth.accessToken) {
+      return res.status(401).json({
+        success: false,
+        notConnected: true,
+        error: 'Spotify account not connected. Please connect your Spotify account in your profile.',
+      });
+    }
+
+    const response = await axios.post(
+      `https://api.spotify.com/v1/users/${spotifyAuth.spotifyId}/playlists`,
+      {
+        name: name.trim(),
+        description: 'Created with SongSwipe',
+        public: Boolean(isPublic),
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${spotifyAuth.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    const pl = response.data;
+    return res.status(201).json({
+      success: true,
+      playlist: {
+        id: pl.id,
+        name: pl.name,
+        description: pl.description || '',
+        track_count: 0,
+        image_url: null,
+        owner_id: pl.owner?.id,
+        owner_name: pl.owner?.display_name || pl.owner?.id,
+        is_public: pl.public,
+      },
+    });
+  } catch (error) {
+    console.error('Error creating Spotify playlist:', error.response?.data || error.message);
+    return res.status(500).json({
+      success: false,
+      error: error.response?.data?.error?.message || 'Failed to create playlist on Spotify',
+    });
   }
 });
 
