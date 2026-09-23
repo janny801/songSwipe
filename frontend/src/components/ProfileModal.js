@@ -80,7 +80,13 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
       if (user.spotify_id) {
         const spotifyData = await api.getSpotifyPlaylists(user.id);
         if (spotifyData.success && Array.isArray(spotifyData.playlists)) {
-          setPlaylists(spotifyData.playlists);
+          const seen = new Set();
+          const unique = spotifyData.playlists.filter((p) => {
+            if (!p?.id || seen.has(p.id)) return false;
+            seen.add(p.id);
+            return true;
+          });
+          setPlaylists(unique);
           return;
         }
       }
@@ -827,8 +833,8 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
                 </View>
               ) : (
                 <View style={styles.playlistsList}>
-                  {playlists.map((pl) => (
-                    <View key={pl.id || pl.name} style={styles.playlistCard}>
+                  {playlists.map((pl, idx) => (
+                    <View key={`${pl.id || pl.name}-${idx}`} style={styles.playlistCard}>
                       <View style={styles.playlistCardLeft}>
                         <View style={styles.playlistCardIcon}>
                           <Ionicons name="musical-notes" size={16} color={COLORS.primary} />
@@ -838,7 +844,7 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
                             {pl.name}
                           </Text>
                           <Text style={styles.playlistCardCount}>
-                            {pl.track_count || 0} track{(pl.track_count || 0) === 1 ? '' : 's'}
+                            {pl.track_count || 0} track{(pl.track_count || 0) === 1 ? '' : 's'} • By {pl.owner_name || 'you'}
                           </Text>
                         </View>
                       </View>

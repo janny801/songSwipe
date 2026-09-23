@@ -9,9 +9,16 @@ import {
   Alert,
   Animated,
   Platform,
+  LogBox,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
+
+// Suppress non-critical development warnings in Expo Go
+LogBox.ignoreLogs([
+  'Encountered two children with the same key',
+  'logo-spotify',
+]);
 import { COLORS } from './src/constants/theme';
 import { api, getBackendUrl } from './src/services/api';
 import { useAudioPlayer } from './src/hooks/useAudioPlayer';

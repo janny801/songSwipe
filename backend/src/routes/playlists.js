@@ -806,29 +806,52 @@ router.get('/spotify', optionalAuth, async (req, res) => {
       });
     }
 
-    // Fetch user playlists from Spotify Web API
-    const spotifyRes = await axios.get('https://api.spotify.com/v1/me/playlists?limit=50', {
-      headers: {
-        Authorization: `Bearer ${spotifyAuth.accessToken}`,
-      },
-    });
+    // Fetch user playlists from Spotify Web API (supporting pagination)
+    let allPlaylists = [];
+    let nextUrl = 'https://api.spotify.com/v1/me/playlists?limit=50';
+    let pagesFetched = 0;
 
-    const allPlaylists = spotifyRes.data.items || [];
+    while (nextUrl && pagesFetched < 3) {
+      try {
+        const spotifyRes = await axios.get(nextUrl, {
+          headers: {
+            Authorization: `Bearer ${spotifyAuth.accessToken}`,
+          },
+        });
+        if (Array.isArray(spotifyRes.data?.items)) {
+          allPlaylists = allPlaylists.concat(spotifyRes.data.items);
+        }
+        nextUrl = spotifyRes.data?.next;
+        pagesFetched++;
+      } catch (pageErr) {
+        console.warn('Pagination notice fetching Spotify playlists:', pageErr.message);
+        break;
+      }
+    }
 
-    // Filter to ONLY playlists created by the user on their own Spotify account
-    const userOwnedPlaylists = allPlaylists
-      .filter((pl) => pl && pl.owner && pl.owner.id === spotifyAuth.spotifyId)
-      .map((pl) => ({
-        id: pl.id,
-        name: pl.name,
-        description: pl.description || '',
-        track_count: pl.items?.total ?? pl.tracks?.total ?? 0,
-        image_url: pl.images?.[0]?.url || null,
-        owner_id: pl.owner?.id,
-        owner_name: pl.owner?.display_name || pl.owner?.id,
-        is_public: pl.public,
-        collaborative: pl.collaborative,
-      }));
+    // Filter to ONLY playlists created by the user on their own Spotify account ("By you")
+    // and deduplicate by playlist ID
+    const seenIds = new Set();
+    const userOwnedPlaylists = [];
+
+    for (const pl of allPlaylists) {
+      if (pl && pl.id && pl.owner && pl.owner.id === spotifyAuth.spotifyId) {
+        if (!seenIds.has(pl.id)) {
+          seenIds.add(pl.id);
+          userOwnedPlaylists.push({
+            id: pl.id,
+            name: pl.name,
+            description: pl.description || '',
+            track_count: pl.items?.total ?? pl.tracks?.total ?? 0,
+            image_url: pl.images?.[0]?.url || null,
+            owner_id: pl.owner?.id,
+            owner_name: pl.owner?.display_name || pl.owner?.id,
+            is_public: pl.public,
+            collaborative: pl.collaborative,
+          });
+        }
+      }
+    }
 
     return res.status(200).json({
       success: true,

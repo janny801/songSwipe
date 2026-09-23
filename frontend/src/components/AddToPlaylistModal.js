@@ -121,7 +121,13 @@ export default function AddToPlaylistModal({
         setNeedsReauth(true);
         setPlaylists([]);
       } else if (res.success && Array.isArray(res.playlists)) {
-        setPlaylists(res.playlists);
+        const seen = new Set();
+        const unique = res.playlists.filter((p) => {
+          if (!p?.id || seen.has(p.id)) return false;
+          seen.add(p.id);
+          return true;
+        });
+        setPlaylists(unique);
       } else {
         setPlaylists([]);
       }
@@ -436,7 +442,7 @@ export default function AddToPlaylistModal({
             ) : (
               <FlatList
                 data={playlists}
-                keyExtractor={(item) => String(item.id)}
+                keyExtractor={(item, index) => `${item.id || item.name || index}-${index}`}
                 contentContainerStyle={styles.listContent}
                 keyboardShouldPersistTaps="handled"
                 renderItem={({ item }) => {
@@ -476,7 +482,7 @@ export default function AddToPlaylistModal({
                           {item.name}
                         </Text>
                         <Text style={styles.playlistCount}>
-                          {item.track_count || 0} track{(item.track_count || 0) === 1 ? '' : 's'} • Created by you
+                          {item.track_count || 0} track{(item.track_count || 0) === 1 ? '' : 's'} • By {item.owner_name || 'you'}
                         </Text>
                       </View>
 
