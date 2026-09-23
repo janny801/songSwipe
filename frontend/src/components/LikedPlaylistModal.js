@@ -126,16 +126,6 @@ function SwipeableTrackRow({
             {dateFormatted && <Text style={styles.trackDate}>Saved {dateFormatted}</Text>}
           </View>
 
-          {/* Direct Add to Playlist button */}
-          <TouchableOpacity
-            style={styles.rowAddToPlaylistBtn}
-            onPress={() => onAddToPlaylist(item)}
-            activeOpacity={0.7}
-            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-          >
-            <Ionicons name="folder-open-outline" size={17} color={COLORS.primary} />
-          </TouchableOpacity>
-
           {/* Play / Pause 30s Audio Preview Button */}
           {(item.preview_url || item.previewUrl) && (
             <TouchableOpacity
@@ -535,17 +525,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 11,
     marginTop: 4,
-  },
-  rowAddToPlaylistBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(29, 185, 84, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(29, 185, 84, 0.25)',
   },
   playBtn: {
     width: 38,
