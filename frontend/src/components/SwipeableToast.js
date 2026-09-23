@@ -76,9 +76,10 @@ export default function SwipeableToast({
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onStartShouldSetPanResponderCapture: () => false,
+      onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
         clearTimer();
       },
@@ -92,10 +93,11 @@ export default function SwipeableToast({
         }
       },
       onPanResponderRelease: (_, gestureState) => {
-        // If swiped up beyond 12px or flicked upward with velocity
+        // If swiped up beyond 5px or flicked upward with velocity
         if (
-          gestureState.dy < -12 ||
-          gestureState.vy < -0.15
+          gestureState.dy < -5 ||
+          gestureState.vy < -0.05 ||
+          (gestureState.dy < 0 && Math.abs(gestureState.vy) > 0.05)
         ) {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
           dismissToastRef.current && dismissToastRef.current(gestureState.vy);
@@ -110,14 +112,21 @@ export default function SwipeableToast({
           startAutoDismissTimerRef.current && startAutoDismissTimerRef.current();
         }
       },
-      onPanResponderTerminate: () => {
-        Animated.spring(panY, {
-          toValue: 0,
-          friction: 8,
-          tension: 50,
-          useNativeDriver: true,
-        }).start();
-        startAutoDismissTimerRef.current && startAutoDismissTimerRef.current();
+      onPanResponderTerminate: (_, gestureState) => {
+        if (
+          gestureState &&
+          (gestureState.dy < -5 || gestureState.vy < -0.05 || (gestureState.dy < 0 && Math.abs(gestureState.vy) > 0.05))
+        ) {
+          dismissToastRef.current && dismissToastRef.current();
+        } else {
+          Animated.spring(panY, {
+            toValue: 0,
+            friction: 8,
+            tension: 50,
+            useNativeDriver: true,
+          }).start();
+          startAutoDismissTimerRef.current && startAutoDismissTimerRef.current();
+        }
       },
     })
   ).current;

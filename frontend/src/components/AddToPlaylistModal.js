@@ -237,7 +237,6 @@ export default function AddToPlaylistModal({
         .filter((p) => selectedPlaylists.has(p.id))
         .map((p) => p.name);
 
-      handleDismiss();
       if (onSuccess) {
         onSuccess({
           playlistIds,
@@ -269,11 +268,15 @@ export default function AddToPlaylistModal({
   return (
     <View style={styles.absoluteOverlay} pointerEvents={visible ? 'auto' : 'none'}>
       {/* Animated Backdrop */}
-      <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
+      <Animated.View
+        style={[styles.backdrop, { opacity: fadeAnim }]}
+        pointerEvents={visible ? 'auto' : 'none'}
+      >
         <TouchableOpacity
           style={StyleSheet.absoluteFillObject}
           activeOpacity={1}
           onPress={handleDismiss}
+          disabled={!visible}
         />
       </Animated.View>
 
@@ -285,6 +288,7 @@ export default function AddToPlaylistModal({
             transform: [{ translateY: slideAnim }],
           },
         ]}
+        pointerEvents={visible ? 'auto' : 'none'}
       >
         {/* Header */}
         <View style={styles.header}>
