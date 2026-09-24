@@ -9,6 +9,8 @@ export default function BottomControls({
   isPlaying,
   onTogglePlayPause,
   onOpenPlaylist,
+  onUndo,
+  canUndo = false,
   likedCount = 0,
   disabled = false,
 }) {
@@ -54,7 +56,17 @@ export default function BottomControls({
         <Ionicons name="heart" size={30} color={COLORS.likeGreen} />
       </TouchableOpacity>
 
-      {/* Liked Playlist Drawer / Modal */}
+      {/* Undo the most recent swipe */}
+      <TouchableOpacity
+        style={[styles.actionBtn, styles.undoBtn, !canUndo && styles.btnDisabled]}
+        onPress={onUndo}
+        disabled={!canUndo}
+        activeOpacity={0.8}
+        accessibilityLabel="Undo last swipe"
+      >
+        <Ionicons name="arrow-undo" size={22} color={canUndo ? COLORS.textPrimary : COLORS.textMuted} />
+      </TouchableOpacity>
+
       <TouchableOpacity
         style={[styles.actionBtn, styles.playlistBtn]}
         onPress={onOpenPlaylist}
@@ -76,9 +88,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 20,
+    gap: 12,
     paddingVertical: 14,
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
   },
   actionBtn: {
     width: 60,
@@ -113,6 +125,12 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     position: 'relative',
+  },
+  undoBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   btnDisabled: {
     opacity: 0.4,

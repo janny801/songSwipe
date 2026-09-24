@@ -246,6 +246,23 @@ export const api = {
   },
 
   /**
+   * Reverses a swipe and removes a liked track from SongSwipe's playlist when needed.
+   */
+  async undoSwipe({ trackId, direction, userId, playlistName = 'Liked Songs' }) {
+    const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/swipe/undo`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ trackId, direction, userId, playlistName }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to undo swipe: ${response.statusText}`);
+    }
+
+    return await response.json();
+  },
+
+  /**
    * Fetches saved/liked tracks from backend
    */
   async getLikedPlaylist(userId, playlistName = 'Liked Songs') {
@@ -573,4 +590,3 @@ export const api = {
     return data;
   },
 };
-

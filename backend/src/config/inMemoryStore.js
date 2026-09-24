@@ -247,6 +247,17 @@ function recordSwipe(userId, track, direction) {
   });
 }
 
+function deleteSwipe(userId, trackId) {
+  const userMap = inMemoryUserSwipes.get(userId);
+  if (!userMap) return false;
+
+  const deleted = userMap.delete(trackId);
+  if (userMap.size === 0) {
+    inMemoryUserSwipes.delete(userId);
+  }
+  return deleted;
+}
+
 const SWIPE_RETENTION_DAYS = 10;
 
 function pruneOldSwipes(days = SWIPE_RETENTION_DAYS) {
@@ -300,6 +311,7 @@ module.exports = {
   addTrackToCustomPlaylists,
   deleteUser,
   recordSwipe,
+  deleteSwipe,
   getUserSwipes,
   pruneOldSwipes,
 };

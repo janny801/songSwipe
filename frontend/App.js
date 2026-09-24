@@ -39,6 +39,7 @@ function MainApp() {
 
   const [tracks, setTracks] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [swipeHistory, setSwipeHistory] = useState([]);
   const [likedPlaylist, setLikedPlaylist] = useState([]);
   const [isLoadingTracks, setIsLoadingTracks] = useState(true);
   const [isLoadingPlaylist, setIsLoadingPlaylist] = useState(false);
@@ -98,6 +99,7 @@ function MainApp() {
       const fetched = await api.fetchTracks('', 10, '', user?.id);
       setTracks(fetched);
       setCurrentIndex(0);
+      setSwipeHistory([]);
     } catch (error) {
       console.warn('Error loading tracks:', error.message);
       Alert.alert(
@@ -172,6 +174,7 @@ function MainApp() {
   // Handle Right Swipe (LIKE track)
   const handleSwipeRight = async (track) => {
     if (!track) return;
+    setSwipeHistory((prev) => [...prev, { track, direction: 'right' }]);
     setCurrentIndex((prev) => prev + 1);
 
     // Check if auto-save to Spotify Liked Songs is enabled
@@ -223,6 +226,7 @@ function MainApp() {
   // Handle Left Swipe (PASS track)
   const handleSwipeLeft = async (track) => {
     if (!track) return;
+    setSwipeHistory((prev) => [...prev, { track, direction: 'left' }]);
     setCurrentIndex((prev) => prev + 1);
 
     try {
@@ -233,6 +237,36 @@ function MainApp() {
       });
     } catch (error) {
       console.warn('Failed to post pass action:', error.message);
+    }
+  };
+
+  const handleUndo = async () => {
+    const lastSwipe = swipeHistory[swipeHistory.length - 1];
+    if (!lastSwipe) return;
+
+    const trackId = lastSwipe.track.spotify_track_id || lastSwipe.track.id;
+    setSwipeHistory((prev) => prev.slice(0, -1));
+    setCurrentIndex((prev) => Math.max(0, prev - 1));
+
+    if (lastSwipe.direction === 'right') {
+      setLikedPlaylist((prev) =>
+        prev.filter((track) => (track.spotify_track_id || track.id || track.track_id) !== trackId)
+      );
+    }
+
+    try {
+      await api.undoSwipe({
+        trackId,
+        direction: lastSwipe.direction,
+        userId: user?.id,
+      });
+    } catch (error) {
+      console.warn('Failed to undo swipe:', error.message);
+      setSwipeHistory((prev) => [...prev, lastSwipe]);
+      setCurrentIndex((prev) => Math.min(tracks.length, prev + 1));
+      if (lastSwipe.direction === 'right' && isAuthenticated) {
+        loadLikedPlaylist();
+      }
     }
   };
 
@@ -342,6 +376,8 @@ function MainApp() {
         isPlaying={isPlaying}
         onTogglePlayPause={togglePlayPause}
         onOpenPlaylist={handleOpenPlaylist}
+        onUndo={handleUndo}
+        canUndo={swipeHistory.length > 0}
         likedCount={isAuthenticated ? likedPlaylist.length : 0}
         disabled={isLoadingTracks || currentIndex >= tracks.length}
       />
