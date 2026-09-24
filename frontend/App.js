@@ -174,7 +174,6 @@ function MainApp() {
   // Handle Right Swipe (LIKE track)
   const handleSwipeRight = async (track) => {
     if (!track) return;
-    setSwipeHistory((prev) => [...prev, { track, direction: 'right' }]);
     setCurrentIndex((prev) => prev + 1);
 
     // Check if auto-save to Spotify Liked Songs is enabled
@@ -242,17 +241,11 @@ function MainApp() {
 
   const handleUndo = async () => {
     const lastSwipe = swipeHistory[swipeHistory.length - 1];
-    if (!lastSwipe) return;
+    if (!lastSwipe || lastSwipe.direction !== 'left') return;
 
     const trackId = lastSwipe.track.spotify_track_id || lastSwipe.track.id;
     setSwipeHistory((prev) => prev.slice(0, -1));
     setCurrentIndex((prev) => Math.max(0, prev - 1));
-
-    if (lastSwipe.direction === 'right') {
-      setLikedPlaylist((prev) =>
-        prev.filter((track) => (track.spotify_track_id || track.id || track.track_id) !== trackId)
-      );
-    }
 
     try {
       await api.undoSwipe({
@@ -264,9 +257,6 @@ function MainApp() {
       console.warn('Failed to undo swipe:', error.message);
       setSwipeHistory((prev) => [...prev, lastSwipe]);
       setCurrentIndex((prev) => Math.min(tracks.length, prev + 1));
-      if (lastSwipe.direction === 'right' && isAuthenticated) {
-        loadLikedPlaylist();
-      }
     }
   };
 
@@ -377,7 +367,7 @@ function MainApp() {
         onTogglePlayPause={togglePlayPause}
         onOpenPlaylist={handleOpenPlaylist}
         onUndo={handleUndo}
-        canUndo={swipeHistory.length > 0}
+        canUndo={swipeHistory[swipeHistory.length - 1]?.direction === 'left'}
         likedCount={isAuthenticated ? likedPlaylist.length : 0}
         disabled={isLoadingTracks || currentIndex >= tracks.length}
       />

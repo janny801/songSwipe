@@ -314,34 +314,22 @@ router.post('/swipe', optionalAuth, async (req, res) => {
 
 /**
  * POST /api/playlists/swipe/undo
- * Removes the most recently undone swipe from history and, for a like,
- * removes the track from the SongSwipe playlist.
+ * Removes a passed track from swipe history so it can be shown again.
  */
 router.post('/swipe/undo', optionalAuth, async (req, res) => {
   const userId = req.user?.userId || req.body.userId || DEFAULT_GUEST_ID;
   const trackId = req.body.trackId;
   const direction = req.body.direction;
-  const playlistName = req.body.playlistName || 'Liked Songs';
 
-  if (!trackId || !['left', 'right'].includes(direction)) {
+  if (!trackId || direction !== 'left') {
     return res.status(400).json({
       success: false,
-      error: 'Missing trackId or invalid swipe direction',
+      error: 'Only passed tracks can be undone',
     });
   }
 
   if (!getIsConnected()) {
     sharedInMemoryStore.deleteSwipe(userId, trackId);
-    if (direction === 'right') {
-      inMemoryStore.playlists = inMemoryStore.playlists.filter(
-        (item) =>
-          !(
-            item.userId === userId &&
-            item.playlistName === playlistName &&
-            item.spotify_track_id === trackId
-          )
-      );
-    }
     return res.status(200).json({ success: true, action: 'undone', storage: 'in-memory' });
   }
 
@@ -353,17 +341,6 @@ router.post('/swipe/undo', optionalAuth, async (req, res) => {
        WHERE user_id = $1 AND spotify_track_id = $2`,
       [userId, trackId]
     );
-
-    if (direction === 'right') {
-      await client.query(
-        `DELETE FROM playlists
-         WHERE user_id = $1 AND playlist_name = $2
-           AND track_id IN (
-             SELECT id FROM tracks WHERE spotify_track_id = $3
-           )`,
-        [userId, playlistName, trackId]
-      );
-    }
 
     await client.query('COMMIT');
     return res.status(200).json({ success: true, action: 'undone', storage: 'postgresql' });

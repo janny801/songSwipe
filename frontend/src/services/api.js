@@ -246,7 +246,7 @@ export const api = {
   },
 
   /**
-   * Reverses a swipe and removes a liked track from SongSwipe's playlist when needed.
+   * Reverses a passed swipe so the track can be shown again.
    */
   async undoSwipe({ trackId, direction, userId, playlistName = 'Liked Songs' }) {
     const response = await fetchWithTimeout(`${activeBaseUrl}/api/playlists/swipe/undo`, {
