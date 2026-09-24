@@ -987,90 +987,107 @@ export default function ProfileModal({ visible, onClose, onGenresUpdated }) {
         )}
 
         {/* Account Deletion Confirmation Dialog (Apple Guideline 5.1.1v) */}
-        {showDeleteAccountModal && (
-          <View style={styles.confirmOverlay}>
-            <View style={styles.confirmDialog}>
-              <View style={styles.confirmIconContainer}>
-                <Ionicons name="warning-outline" size={30} color={COLORS.nopeRed} />
-              </View>
-              <Text style={styles.confirmTitle}>Delete Account?</Text>
-              <Text style={styles.confirmMessage}>
-                This action is permanent and cannot be undone. All your saved tracks, custom playlists, and profile data will be permanently wiped.
-              </Text>
-
-              {user?.auth_provider !== 'google' && (
-                <View style={styles.deletePasswordContainer}>
-                  <Text style={styles.deletePasswordLabel}>
-                    Confirm your password to proceed:
+        <Modal
+          visible={showDeleteAccountModal}
+          transparent
+          animationType="fade"
+          presentationStyle="overFullScreen"
+          onRequestClose={() => {
+            if (!isDeletingAccount) {
+              setShowDeleteAccountModal(false);
+              setDeletePassword('');
+              setDeleteAccountError('');
+            }
+          }}
+        >
+          <View style={styles.accountDeleteModalRoot}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={styles.accountDeleteKeyboardLayer}
+            >
+              <View style={styles.confirmDialog}>
+                  <View style={styles.confirmIconContainer}>
+                    <Ionicons name="warning-outline" size={30} color={COLORS.nopeRed} />
+                  </View>
+                  <Text style={styles.confirmTitle}>Delete Account?</Text>
+                  <Text style={styles.confirmMessage}>
+                    This action is permanent and cannot be undone. All your saved tracks, custom playlists, and profile data will be permanently wiped.
                   </Text>
-                  <View style={styles.deletePasswordInputWrapper}>
-                    <TextInput
-                      style={styles.deletePasswordInput}
-                      placeholder="Enter your password..."
-                      placeholderTextColor={COLORS.textMuted}
-                      secureTextEntry={!showDeletePassword}
-                      value={deletePassword}
-                      onChangeText={(t) => {
-                        setDeletePassword(t);
+
+                  {user?.auth_provider !== 'google' && (
+                    <View style={styles.deletePasswordContainer}>
+                      <Text style={styles.deletePasswordLabel}>
+                        Confirm your password to proceed:
+                      </Text>
+                      <View style={styles.deletePasswordInputWrapper}>
+                        <TextInput
+                          style={styles.deletePasswordInput}
+                          placeholder="Enter your password..."
+                          placeholderTextColor={COLORS.textMuted}
+                          secureTextEntry={!showDeletePassword}
+                          value={deletePassword}
+                          onChangeText={(t) => {
+                            setDeletePassword(t);
+                            setDeleteAccountError('');
+                          }}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                        <TouchableOpacity
+                          onPress={() => setShowDeletePassword((prev) => !prev)}
+                          style={styles.deleteEyeIcon}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Ionicons
+                            name={showDeletePassword ? 'eye-off-outline' : 'eye-outline'}
+                            size={18}
+                            color={COLORS.textMuted}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+
+                  {deleteAccountError ? (
+                    <View style={styles.deleteErrorBanner}>
+                      <Ionicons name="alert-circle-outline" size={16} color={COLORS.nopeRed} />
+                      <Text style={styles.deleteErrorText}>{deleteAccountError}</Text>
+                    </View>
+                  ) : null}
+
+                  <View style={styles.confirmActions}>
+                    <TouchableOpacity
+                      style={styles.confirmCancelBtn}
+                      onPress={() => {
+                        setShowDeleteAccountModal(false);
+                        setDeletePassword('');
                         setDeleteAccountError('');
                       }}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    <TouchableOpacity
-                      onPress={() => setShowDeletePassword((prev) => !prev)}
-                      style={styles.deleteEyeIcon}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      disabled={isDeletingAccount}
+                      activeOpacity={0.8}
                     >
-                      <Ionicons
-                        name={showDeletePassword ? 'eye-off-outline' : 'eye-outline'}
-                        size={18}
-                        color={COLORS.textMuted}
-                      />
+                      <Text style={styles.confirmCancelText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.confirmDeleteBtn,
+                        (isDeletingAccount || (user?.auth_provider !== 'google' && !deletePassword.trim())) && { opacity: 0.6 },
+                      ]}
+                      onPress={handleConfirmDeleteAccount}
+                      disabled={isDeletingAccount || (user?.auth_provider !== 'google' && !deletePassword.trim())}
+                      activeOpacity={0.8}
+                    >
+                      {isDeletingAccount ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.confirmDeleteText}>Delete Forever</Text>
+                      )}
                     </TouchableOpacity>
                   </View>
-                </View>
-              )}
-
-              {deleteAccountError ? (
-                <View style={styles.deleteErrorBanner}>
-                  <Ionicons name="alert-circle-outline" size={16} color={COLORS.nopeRed} />
-                  <Text style={styles.deleteErrorText}>{deleteAccountError}</Text>
-                </View>
-              ) : null}
-
-              <View style={styles.confirmActions}>
-                <TouchableOpacity
-                  style={styles.confirmCancelBtn}
-                  onPress={() => {
-                    setShowDeleteAccountModal(false);
-                    setDeletePassword('');
-                    setDeleteAccountError('');
-                  }}
-                  disabled={isDeletingAccount}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.confirmCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.confirmDeleteBtn,
-                    (isDeletingAccount || (user?.auth_provider !== 'google' && !deletePassword.trim())) && { opacity: 0.6 },
-                  ]}
-                  onPress={handleConfirmDeleteAccount}
-                  disabled={isDeletingAccount || (user?.auth_provider !== 'google' && !deletePassword.trim())}
-                  activeOpacity={0.8}
-                >
-                  {isDeletingAccount ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.confirmDeleteText}>Delete Forever</Text>
-                  )}
-                </TouchableOpacity>
               </View>
-            </View>
+            </KeyboardAvoidingView>
           </View>
-        )}
+        </Modal>
 
         {/* Toast Notification Banner with Swipe-Up to Dismiss */}
         <SwipeableToast
@@ -1722,11 +1739,24 @@ const styles = StyleSheet.create({
   confirmOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    zIndex: 99999,
+    elevation: 20,
+  },
+  confirmDialogPositioner: {
+    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    zIndex: 99999,
-    elevation: 20,
+  },
+  accountDeleteModalRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+  },
+  accountDeleteKeyboardLayer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
   },
   confirmDialog: {
     backgroundColor: '#1E1E1E',
