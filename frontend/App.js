@@ -132,6 +132,34 @@ function MainApp() {
     loadTracks();
   }, [checkBackend, loadTracks]);
 
+  // Background prefetch for continuous discovery stream
+  const isFetchingMoreRef = useRef(false);
+  const fetchMoreTracks = useCallback(async () => {
+    if (isFetchingMoreRef.current) return;
+    isFetchingMoreRef.current = true;
+    try {
+      const moreTracks = await api.fetchTracks('', 10, '', user?.id);
+      if (moreTracks && moreTracks.length > 0) {
+        setTracks((prev) => {
+          const existingIds = new Set(prev.map((t) => t.spotify_track_id || t.id));
+          const fresh = moreTracks.filter((t) => !existingIds.has(t.spotify_track_id || t.id));
+          return fresh.length > 0 ? [...prev, ...fresh] : prev;
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to prefetch more tracks:', e.message);
+    } finally {
+      isFetchingMoreRef.current = false;
+    }
+  }, [user?.id]);
+
+  // Automatically prefetch when user gets within 3 songs of end of deck
+  useEffect(() => {
+    if (!isLoadingTracks && tracks.length > 0 && currentIndex >= tracks.length - 3) {
+      fetchMoreTracks();
+    }
+  }, [currentIndex, tracks.length, isLoadingTracks, fetchMoreTracks]);
+
   // Reload playlist when authentication status changes
   useEffect(() => {
     if (isAuthenticated) {
@@ -299,7 +327,7 @@ function MainApp() {
             currentIndex={currentIndex}
             onSwipeLeft={handleSwipeLeft}
             onSwipeRight={handleSwipeRight}
-            onReset={() => setCurrentIndex(0)}
+            onReset={loadTracks}
             isPlaying={isPlaying}
             progress={progress}
             onAddToPlaylist={handleOpenAddToPlaylists}

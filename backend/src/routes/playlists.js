@@ -145,7 +145,25 @@ router.post('/swipe', optionalAuth, async (req, res) => {
     duration_ms: track.duration_ms || track.durationMs || 0,
   };
 
-  // If swiped left (pass), simply acknowledge without saving to playlist
+  // Record swipe in history for recommendation algorithm & deduplication
+  const isPostgresReady = getIsConnected();
+  if (isPostgresReady) {
+    try {
+      await pool.query(
+        `INSERT INTO user_swipes (user_id, spotify_track_id, artist_name, track_name, genre, direction)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (user_id, spotify_track_id)
+         DO UPDATE SET direction = EXCLUDED.direction, created_at = CURRENT_TIMESTAMP`,
+        [userId, trackData.spotify_track_id, trackData.artist, trackData.name, track.genre || '', direction]
+      );
+    } catch (swipeErr) {
+      console.warn('⚠️ Could not record user swipe:', swipeErr.message);
+    }
+  } else {
+    sharedInMemoryStore.recordSwipe(userId, trackData, direction);
+  }
+
+  // If swiped left (pass), return success now that swipe history has been recorded
   if (direction === 'left') {
     return res.status(200).json({
       success: true,
@@ -156,7 +174,6 @@ router.post('/swipe', optionalAuth, async (req, res) => {
   }
 
   // Right-swipe: Save to database (or in-memory fallback if DB not yet connected)
-  const isPostgresReady = getIsConnected();
 
   if (!isPostgresReady) {
     // In-memory fallback
@@ -677,6 +694,7 @@ router.post('/add-to-playlists', optionalAuth, async (req, res) => {
 
   if (!getIsConnected()) {
     const addedCount = sharedInMemoryStore.addTrackToCustomPlaylists(userId, trackData, playlistNames);
+    sharedInMemoryStore.recordSwipe(userId, trackData, 'right');
     return res.status(200).json({
       success: true,
       storage: 'in-memory',
@@ -755,6 +773,19 @@ router.post('/add-to-playlists', optionalAuth, async (req, res) => {
         [userId, savedTrack.id, exactName]
       );
       addedCount++;
+    }
+
+    // Record swipe in history for recommendation engine taste profile
+    try {
+      await client.query(
+        `INSERT INTO user_swipes (user_id, spotify_track_id, artist_name, track_name, genre, direction)
+         VALUES ($1, $2, $3, $4, $5, 'right')
+         ON CONFLICT (user_id, spotify_track_id)
+         DO UPDATE SET direction = 'right', created_at = CURRENT_TIMESTAMP`,
+        [userId, trackData.spotify_track_id, trackData.artist, trackData.name, track.genre || '']
+      );
+    } catch (swipeErr) {
+      console.warn('⚠️ Could not record swipe in add-to-playlists:', swipeErr.message);
     }
 
     await client.query('COMMIT');

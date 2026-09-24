@@ -68,6 +68,19 @@ CREATE TABLE IF NOT EXISTS user_custom_playlists (
     CONSTRAINT unique_user_custom_playlist UNIQUE (user_id, name)
 );
 
+-- User swipe history table (tracks both right likes and left passes for recommendation and deduplication)
+CREATE TABLE IF NOT EXISTS user_swipes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    spotify_track_id VARCHAR(255) NOT NULL,
+    artist_name VARCHAR(255) NOT NULL,
+    track_name VARCHAR(255),
+    genre VARCHAR(100),
+    direction VARCHAR(10) NOT NULL, -- 'right' (like) or 'left' (pass)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_user_track_swipe UNIQUE (user_id, spotify_track_id)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_playlists_user_id ON playlists(user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_track_id ON playlists(track_id);
@@ -79,3 +92,6 @@ CREATE INDEX IF NOT EXISTS idx_users_spotify_id ON users(spotify_id);
 CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx ON users (LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_user_swipes_user_id ON user_swipes(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_swipes_artist ON user_swipes(artist_name);
+CREATE INDEX IF NOT EXISTS idx_user_swipes_direction ON user_swipes(direction);

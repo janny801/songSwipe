@@ -230,9 +230,32 @@ function addTrackToCustomPlaylists(userId, track, playlistNames) {
   return added;
 }
 
+const inMemoryUserSwipes = new Map(); // userId -> Map(spotify_track_id -> { ... })
+
+function recordSwipe(userId, track, direction) {
+  if (!inMemoryUserSwipes.has(userId)) {
+    inMemoryUserSwipes.set(userId, new Map());
+  }
+  const userMap = inMemoryUserSwipes.get(userId);
+  const trackId = track.spotify_track_id || track.id;
+  userMap.set(trackId, {
+    spotify_track_id: trackId,
+    artist_name: track.artist || track.artists?.[0]?.name || 'Unknown Artist',
+    track_name: track.name,
+    direction,
+    created_at: new Date().toISOString(),
+  });
+}
+
+function getUserSwipes(userId) {
+  if (!inMemoryUserSwipes.has(userId)) return [];
+  return Array.from(inMemoryUserSwipes.get(userId).values());
+}
+
 function deleteUser(userId) {
   inMemoryUsers.delete(userId);
   inMemoryCustomPlaylists.delete(userId);
+  inMemoryUserSwipes.delete(userId);
   for (let i = inMemoryPlaylistTracks.length - 1; i >= 0; i--) {
     if (inMemoryPlaylistTracks[i].userId === userId) {
       inMemoryPlaylistTracks.splice(i, 1);
@@ -257,4 +280,6 @@ module.exports = {
   deleteCustomPlaylist,
   addTrackToCustomPlaylists,
   deleteUser,
+  recordSwipe,
+  getUserSwipes,
 };

@@ -1,48 +1,42 @@
 const express = require('express');
 const router = express.Router();
+const { getPersonalizedTracks } = require('../services/recommendationEngine');
 const { fetchSpotifyTracks } = require('../services/spotifyService');
-const { pool, getIsConnected } = require('../config/db');
-const inMemoryStore = require('../config/inMemoryStore');
 
 /**
  * GET /api/tracks
- * Fetches tracks from Spotify Web API using client credentials, extracts 30-second preview URLs
+ * Fetches personalized tracks for the swipe deck using the 70/20/10 recommendation engine.
  * Query params:
- *   - query: search term
+ *   - query: optional manual search term
  *   - genre: optional genre filter
- *   - userId: optional user ID to personalize by user's favorite genres
+ *   - userId: user ID to personalize based on right/left swipe history
  *   - limit: number of tracks (default 10)
  */
 router.get('/', async (req, res) => {
   try {
     const { query = '', limit = 10, genre = '', userId = '' } = req.query;
 
-    let userGenres = [];
-    if (userId) {
-      try {
-        if (getIsConnected()) {
-          const userRes = await pool.query('SELECT favorite_genres FROM users WHERE id = $1', [userId]);
-          if (userRes.rows.length > 0 && Array.isArray(userRes.rows[0].favorite_genres)) {
-            userGenres = userRes.rows[0].favorite_genres;
-          }
-        } else {
-          const inMemUser = inMemoryStore.findUserById(userId);
-          if (inMemUser && Array.isArray(inMemUser.favorite_genres)) {
-            userGenres = inMemUser.favorite_genres;
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to load user genres:', e.message);
-      }
-    }
+    const result = await getPersonalizedTracks({
+      userId,
+      query,
+      genre,
+      limit: Number(limit) || 10,
+    });
 
-    const result = await fetchSpotifyTracks({ query, limit, genre, userGenres });
     return res.status(200).json({
       success: true,
       ...result,
     });
   } catch (error) {
     console.error('Error in GET /api/tracks:', error);
+    // Safe fallback to basic fetch if recommendation pipeline encounters unexpected error
+    try {
+      const fallback = await fetchSpotifyTracks({ query: req.query.query, limit: 10 });
+      return res.status(200).json({
+        success: true,
+        ...fallback,
+      });
+    } catch (_) {}
     return res.status(500).json({
       success: false,
       error: 'Failed to retrieve tracks',
