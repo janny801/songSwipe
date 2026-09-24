@@ -95,3 +95,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx ON users (LOWER(email));
 CREATE INDEX IF NOT EXISTS idx_user_swipes_user_id ON user_swipes(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_swipes_artist ON user_swipes(artist_name);
 CREATE INDEX IF NOT EXISTS idx_user_swipes_direction ON user_swipes(direction);
+CREATE INDEX IF NOT EXISTS idx_user_swipes_created_at ON user_swipes(created_at);

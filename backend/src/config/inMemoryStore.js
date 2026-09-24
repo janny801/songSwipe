@@ -247,9 +247,28 @@ function recordSwipe(userId, track, direction) {
   });
 }
 
+const SWIPE_RETENTION_DAYS = 10;
+
+function pruneOldSwipes(days = SWIPE_RETENTION_DAYS) {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  for (const [uid, userMap] of inMemoryUserSwipes.entries()) {
+    for (const [trackId, swipe] of userMap.entries()) {
+      if (new Date(swipe.created_at).getTime() < cutoff) {
+        userMap.delete(trackId);
+      }
+    }
+    if (userMap.size === 0) {
+      inMemoryUserSwipes.delete(uid);
+    }
+  }
+}
+
 function getUserSwipes(userId) {
   if (!inMemoryUserSwipes.has(userId)) return [];
-  return Array.from(inMemoryUserSwipes.get(userId).values());
+  pruneOldSwipes(SWIPE_RETENTION_DAYS);
+  const cutoff = Date.now() - SWIPE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const swipes = Array.from(inMemoryUserSwipes.get(userId)?.values() || []);
+  return swipes.filter((s) => new Date(s.created_at).getTime() >= cutoff);
 }
 
 function deleteUser(userId) {
@@ -282,4 +301,5 @@ module.exports = {
   deleteUser,
   recordSwipe,
   getUserSwipes,
+  pruneOldSwipes,
 };

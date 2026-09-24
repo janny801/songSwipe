@@ -163,3 +163,56 @@ SongSwipe was built with future Spotify user authorization in mind:
 - **Tactile Haptics**: Light haptic triggers when dragging past the swipe threshold, and success vibrations on right swipes (`expo-haptics`).
 - **Playlist Drawer**: Interactive modal displaying all liked tracks with in-modal playback.
 - **Network Resiliency**: Dynamic backend URL selector allowing seamless switching between `localhost` (iOS simulator) and your Mac's LAN IP (`192.168.1.36:3001`) for physical iPhone testing.
+
+---
+
+## 🧠 Recommendation & Swiping Discovery Algorithm
+
+SongSwipe features a retention-focused, adaptive recommendation engine inspired by TikTok and Spotify Discover Weekly, designed to continuously learn from user interactions while keeping the catalog fresh and storage lean.
+
+### 1. How Songs Are Chosen (The 70 / 20 / 10 Engine)
+
+Every batch of 10 discovery cards is assembled using a balanced **Exploit / Explore / Serendipity** distribution:
+
+* **70% Exploit (Known Favorites & Profile Genres)**:
+  * Pulls tracks from the user's top-liked artists (weighted by right-swipes) and their chosen **Profile Favorite Genres**.
+* **20% Explore (Musically Adjacent Artists)**:
+  * Uses an internal artist proximity matrix to introduce musically related artists (e.g., liking *Billie Eilish* introduces *Djo*, *Hozier*, or *Dominic Fike*; liking *The Weeknd* introduces *Brent Faiyaz* or *Steve Lacy*).
+* **10% Serendipity (Trending Wildcards)**:
+  * Injects current viral breakout hits to test appetite for new music without breaking the session's flow.
+
+---
+
+### 2. Profile Genres + Behavioral Swiping Integration
+
+* **Day 1 / Cold Start**: Before any swipes are recorded, the user's **Profile Favorite Genres** take dominant control of the Exploit and Explore buckets, ensuring cards immediately match their chosen style.
+* **Micro-Learning**: As the user swipes, the algorithm learns specific artist preferences within those genres (right-swipe = +1.0 affinity, left-swipe = -0.5 penalty).
+* **Instant Refresh**: Updating genres in the Profile modal immediately fires `onGenresUpdated()`, reloading the swipe queue with fresh cards.
+
+---
+
+### 3. 10-Day Rolling Cooldown & Misswipe Recirculation
+
+Permanent song blacklisting is avoided to address real-world usage patterns:
+* **Misswipes & Mood Changes**: Users frequently skip songs accidentally or may appreciate an upbeat track on a Friday that they skipped on a Monday morning.
+* **10-Day Sliding Deduplication**: Songs swiped within the last 10 days are strictly excluded from appearing again in the deck.
+* **Second Chances**: After 10 days, passed songs naturally age out of the exclusion filter and become eligible to reappear as fresh discoveries.
+
+---
+
+### 4. Automated Database Pruning (Zero Storage Bloat)
+
+To ensure the app stays permanently within free-tier cloud database quotas (Neon, Supabase 500MB) without slowing down queries:
+* **Periodic Cleanup**: Background job runs on server startup and every 12 hours:
+  ```sql
+  DELETE FROM user_swipes WHERE created_at < NOW() - INTERVAL '10 days';
+  ```
+* **Performance Indexing**: Indexed on `user_swipes(created_at)` for sub-millisecond pruning and range filtering.
+* **Storage Footprint**: The `user_swipes` table stays tiny (< 5MB) even with thousands of active listeners.
+
+---
+
+### 5. Continuous Stream & Audio Previews
+
+* **Background Prefetching**: When the user reaches 3 cards before the end of their current deck, the app silently fetches the next 10 personalized recommendations in the background for an uninterrupted infinite swipe stream.
+* **30s Studio Previews**: Real 30-second studio preview clips are resolved and verified for every candidate track.

@@ -55,8 +55,42 @@ const TRENDING_WILDCARDS = [
   'Hozier',
 ];
 
+const SWIPE_RETENTION_DAYS = 10;
+
 /**
- * 1. Fetch User Taste Profile from swipe history and playlists
+ * Prunes swipe records older than 10 days to keep the database lightweight,
+ * free-tier friendly, and allow misswiped/older tracks to recirculate into discovery.
+ */
+async function pruneOldSwipes(days = SWIPE_RETENTION_DAYS) {
+  const isPostgresReady = getIsConnected();
+  if (isPostgresReady) {
+    try {
+      const res = await pool.query(
+        `DELETE FROM user_swipes WHERE created_at < NOW() - ($1 || ' days')::INTERVAL`,
+        [days]
+      );
+      if (res.rowCount > 0) {
+        console.log(`🧹 Pruned ${res.rowCount} swipe records older than ${days} days from database.`);
+      }
+    } catch (e) {
+      console.warn('⚠️ Could not prune old swipes:', e.message);
+    }
+  } else {
+    sharedInMemoryStore.pruneOldSwipes(days);
+  }
+}
+
+// Background cleanup on startup and periodically every 12 hours
+setTimeout(() => {
+  pruneOldSwipes(SWIPE_RETENTION_DAYS).catch(() => {});
+}, 5000);
+
+setInterval(() => {
+  pruneOldSwipes(SWIPE_RETENTION_DAYS).catch(() => {});
+}, 12 * 60 * 60 * 1000);
+
+/**
+ * 1. Fetch User Taste Profile from swipe history (past 10 days) and playlists
  */
 async function getUserTasteProfile(userId) {
   if (!userId) {
@@ -72,13 +106,13 @@ async function getUserTasteProfile(userId) {
 
   if (isPostgresReady) {
     try {
-      // 1. Get all swiped track IDs (to guarantee deduplication)
+      // 1. Get swiped track IDs from the last 10 days (misswiped and older tracks recirculate after 10 days)
       const swipesRes = await pool.query(
-        `SELECT spotify_track_id, artist_name, direction
+        `SELECT spotify_track_id, artist_name, direction, created_at
          FROM user_swipes
-         WHERE user_id = $1
+         WHERE user_id = $1 AND created_at >= NOW() - ($2 || ' days')::INTERVAL
          ORDER BY created_at DESC`,
-        [userId]
+        [userId, SWIPE_RETENTION_DAYS]
       );
 
       const swipedTrackIds = new Set(swipesRes.rows.map((r) => r.spotify_track_id));
@@ -384,4 +418,6 @@ module.exports = {
   getPersonalizedTracks,
   getUserTasteProfile,
   RELATED_ARTISTS_MAP,
+  pruneOldSwipes,
+  SWIPE_RETENTION_DAYS,
 };
