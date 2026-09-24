@@ -28,6 +28,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 export default function AddToPlaylistModal({
   visible,
   track,
+  tracks = [],
   onClose,
   onSuccess,
 }) {
@@ -146,14 +147,14 @@ export default function AddToPlaylistModal({
   }, [user?.id]);
 
   useEffect(() => {
-    if (visible && track) {
+    if (visible && (track || tracks.length > 0)) {
       setSelectedPlaylists(new Set());
       setErrorMsg('');
       setShowCreateInput(false);
       setNewPlaylistName('');
       loadSpotifyPlaylists();
     }
-  }, [visible, track, loadSpotifyPlaylists]);
+  }, [visible, track, tracks.length, loadSpotifyPlaylists]);
 
   // Handle Spotify Connect / Re-auth directly inside popup
   const handleConnectSpotify = async () => {
@@ -228,7 +229,15 @@ export default function AddToPlaylistModal({
 
     try {
       const playlistIds = Array.from(selectedPlaylists);
-      await api.addTrackToSpotifyPlaylists({ track: displayTrack, playlistIds, userId: user?.id });
+      await Promise.all(
+        displayTracks.map((selectedTrack) =>
+          api.addTrackToSpotifyPlaylists({
+            track: selectedTrack,
+            playlistIds,
+            userId: user?.id,
+          })
+        )
+      );
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
 
@@ -242,6 +251,7 @@ export default function AddToPlaylistModal({
           playlistIds,
           playlistNames: selectedNames,
           track: displayTrack,
+          trackCount: displayTracks.length,
         });
       }
     } catch (err) {
@@ -255,7 +265,8 @@ export default function AddToPlaylistModal({
   if (track) {
     activeTrackRef.current = track;
   }
-  const displayTrack = track || activeTrackRef.current;
+  const displayTrack = track || tracks[0] || activeTrackRef.current;
+  const displayTracks = tracks.length > 0 ? tracks : displayTrack ? [displayTrack] : [];
 
   if (!isRendered || !displayTrack) return null;
 

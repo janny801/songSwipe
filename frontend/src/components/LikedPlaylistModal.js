@@ -30,6 +30,9 @@ const ROW_HEIGHT = 76;
 function SwipeableTrackRow({
   item,
   isPlaying,
+  selectionMode,
+  isSelected,
+  onToggleSelection,
   onPlayPreview,
   onDeleteTrack,
   onAddToPlaylist,
@@ -94,6 +97,7 @@ function SwipeableTrackRow({
         style={styles.horizontalScrollView}
         contentContainerStyle={{ width: CARD_WIDTH + ACTION_WIDTH * 2, height: ROW_HEIGHT }}
         nestedScrollEnabled={true}
+        scrollEnabled={!selectionMode}
       >
         {/* Left Action: Add to Playlist (Revealed on Swipe Right) */}
         <TouchableOpacity
@@ -157,6 +161,17 @@ function SwipeableTrackRow({
           <Text style={styles.scrollActionDeleteText}>Delete</Text>
         </TouchableOpacity>
       </ScrollView>
+      {selectionMode && (
+        <TouchableOpacity
+          style={styles.selectionOverlay}
+          onPress={() => onToggleSelection(item)}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.selectionCheckbox, isSelected && styles.selectionCheckboxSelected]}>
+            {isSelected && <Ionicons name="checkmark" size={16} color="#000" />}
+          </View>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -173,6 +188,10 @@ export default function LikedPlaylistModal({
   const [playingTrackId, setPlayingTrackId] = useState(null);
   const [modalSound, setModalSound] = useState(null);
   const [trackForPlaylistModal, setTrackForPlaylistModal] = useState(null);
+  const [showBatchPlaylistModal, setShowBatchPlaylistModal] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedTrackIds, setSelectedTrackIds] = useState(new Set());
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
 
   // Toast notification state for adding songs to playlist
   const [toastMessage, setToastMessage] = useState(null);
@@ -222,7 +241,63 @@ export default function LikedPlaylistModal({
 
   // Trigger Add to Playlist Modal directly inside this view
   const handleAddToPlaylistAction = (item) => {
+    if (selectionMode) {
+      toggleTrackSelection(item);
+      return;
+    }
     setTrackForPlaylistModal(item);
+  };
+
+  const getTrackId = (item) => item.spotify_track_id || item.id || item.track_id;
+
+  const toggleTrackSelection = (item) => {
+    const id = getTrackId(item);
+    setSelectedTrackIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectedTracks = tracks.filter((item) => selectedTrackIds.has(getTrackId(item)));
+
+  const handleEnterSelectionMode = () => {
+    setSelectionMode((prev) => !prev);
+    setSelectedTrackIds(new Set());
+  };
+
+  const handleBatchDelete = () => {
+    if (selectedTracks.length === 0) return;
+    Alert.alert(
+      'Remove Selected Songs',
+      `Remove ${selectedTracks.length} song${selectedTracks.length > 1 ? 's' : ''} from SongSwipe? These songs will remain in your Spotify Liked Songs.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setIsBatchDeleting(true);
+            try {
+              if (selectedTracks.some((item) => getTrackId(item) === playingTrackId)) {
+                stopModalAudio();
+              }
+              await Promise.all(selectedTracks.map((item) => onDeleteTrack?.(item)));
+              setSelectedTrackIds(new Set());
+              setSelectionMode(false);
+            } finally {
+              setIsBatchDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleBatchAddToPlaylist = () => {
+    if (selectedTracks.length === 0) return;
+    setShowBatchPlaylistModal(true);
   };
 
   // Confirm before deleting track from playlist
@@ -250,7 +325,10 @@ export default function LikedPlaylistModal({
   const handleClose = () => {
     stopModalAudio();
     setTrackForPlaylistModal(null);
+    setShowBatchPlaylistModal(false);
     setToastMessage(null);
+    setSelectionMode(false);
+    setSelectedTrackIds(new Set());
     onClose();
   };
 
@@ -261,6 +339,9 @@ export default function LikedPlaylistModal({
       <SwipeableTrackRow
         item={item}
         isPlaying={isThisPlaying}
+        selectionMode={selectionMode}
+        isSelected={selectedTrackIds.has(trackId)}
+        onToggleSelection={toggleTrackSelection}
         onPlayPreview={handlePlayPreview}
         onDeleteTrack={handleDeleteConfirmation}
         onAddToPlaylist={handleAddToPlaylistAction}
@@ -289,6 +370,20 @@ export default function LikedPlaylistModal({
           </View>
 
           <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={[styles.multiSelectBtn, selectionMode && styles.multiSelectBtnActive]}
+              onPress={handleEnterSelectionMode}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={selectionMode ? 'close' : 'checkmark-circle-outline'}
+                size={19}
+                color={selectionMode ? COLORS.nopeRed : COLORS.textPrimary}
+              />
+              <Text style={[styles.multiSelectText, selectionMode && styles.multiSelectTextActive]}>
+                {selectionMode ? 'Done' : 'Select'}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn} onPress={onRefresh} activeOpacity={0.7}>
               <Ionicons name="sync-outline" size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
@@ -347,14 +442,53 @@ export default function LikedPlaylistModal({
           />
         )}
 
+        {selectionMode && (
+          <View style={styles.batchActions}>
+            <Text style={styles.batchSelectionText}>
+              {selectedTracks.length} selected
+            </Text>
+            <TouchableOpacity
+              style={[styles.batchActionBtn, selectedTracks.length === 0 && styles.batchActionBtnDisabled]}
+              onPress={handleBatchAddToPlaylist}
+              disabled={selectedTracks.length === 0}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="folder-open-outline" size={18} color="#000" />
+              <Text style={styles.batchActionText}>Add to Playlist</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.batchActionBtn, styles.batchDeleteBtn, (selectedTracks.length === 0 || isBatchDeleting) && styles.batchActionBtnDisabled]}
+              onPress={handleBatchDelete}
+              disabled={selectedTracks.length === 0 || isBatchDeleting}
+              activeOpacity={0.8}
+            >
+              {isBatchDeleting ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <>
+                  <Ionicons name="trash-outline" size={18} color="#FFF" />
+                  <Text style={[styles.batchActionText, styles.batchDeleteText]}>Remove</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Modal popup to add song to user's custom playlists with multi-select */}
         <AddToPlaylistModal
-          visible={Boolean(trackForPlaylistModal)}
+          visible={Boolean(trackForPlaylistModal) || showBatchPlaylistModal}
           track={trackForPlaylistModal}
-          onClose={() => setTrackForPlaylistModal(null)}
+          tracks={showBatchPlaylistModal ? selectedTracks : []}
+          onClose={() => {
+            setTrackForPlaylistModal(null);
+            setShowBatchPlaylistModal(false);
+          }}
           onSuccess={(result) => {
             const addedTrack = trackForPlaylistModal;
             setTrackForPlaylistModal(null);
+            setShowBatchPlaylistModal(false);
+            setSelectionMode(false);
+            setSelectedTrackIds(new Set());
 
             const names = Array.isArray(result?.playlistNames)
               ? result.playlistNames
@@ -362,9 +496,10 @@ export default function LikedPlaylistModal({
               ? result
               : [];
             const count = names.length || result?.playlistIds?.length || 1;
-            const trackName = result?.track?.name || addedTrack?.name || 'Song';
+            const trackCount = result?.trackCount || 1;
+            const trackName = result?.track?.name || addedTrack?.name || 'Selected songs';
 
-            let title = 'Added to Playlist';
+            let title = trackCount > 1 ? `Added ${trackCount} Songs` : 'Added to Playlist';
             if (count === 1 && names[0]) {
               title = `Added to ${names[0]}`;
             } else if (count > 1) {
@@ -432,6 +567,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  multiSelectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.surface,
+  },
+  multiSelectBtnActive: {
+    backgroundColor: 'rgba(235, 87, 87, 0.12)',
+  },
+  multiSelectText: {
+    color: COLORS.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  multiSelectTextActive: {
+    color: COLORS.nopeRed,
+  },
   iconBtn: {
     width: 36,
     height: 36,
@@ -487,6 +642,67 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginVertical: 4,
     backgroundColor: COLORS.cardBackground,
+  },
+  selectionOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingRight: 18,
+    backgroundColor: 'rgba(18, 18, 18, 0.08)',
+  },
+  selectionCheckbox: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    borderColor: COLORS.textMuted,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectionCheckboxSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary,
+  },
+  batchActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.background,
+  },
+  batchSelectionText: {
+    flex: 1,
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  batchActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: COLORS.primary,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    height: 36,
+  },
+  batchDeleteBtn: {
+    backgroundColor: COLORS.nopeRed,
+  },
+  batchActionBtnDisabled: {
+    opacity: 0.45,
+  },
+  batchActionText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  batchDeleteText: {
+    color: '#FFF',
   },
   horizontalScrollView: {
     height: ROW_HEIGHT,
